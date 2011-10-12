@@ -41,9 +41,8 @@
 	flexibility for manipulating the data within the file,
 	including inserting and deleting data anywhere in the file,
 	creating and removing holes in the data, etc. Each
-	modification of the data creates a new file. Gostor doesn't
-	implement any ways of organizing the files in hierarchical
-	structures, or mapping them to strings. Thus Gostor can be
+	modification of the data creates a new file. Gostor isn't contrainted by 
+	organizing the files in hierarchical structures, or identifing them with strings. Thus Gostor can be
 	used to implement standard file systems as well as
 	experimenting with new ways of storing and accessing users'
 	data.
@@ -68,9 +67,9 @@ databases provide better consistency and concurrency guarantees. They
 are hard to install and maintain, often requiring professional
 database administrator in order to achieve reasonable performance.
 
-There are many attempts to introduce some of the database benefits to
-the file systems, such as transactions, snapshots, etc. Even though
-some of the popular file systems support snapshots and versioning,
+There have been many attempts to introduce the benefits of databases to
+file systems, such as transactions, snapshots, etc. Even though
+some popular file systems support snapshots and versioning,
 creating and manipulating snapshots is not part of the standard file
 operations.
 
@@ -120,7 +119,8 @@ to Gostor is closed. There is no guarantee that a fileID retrieved
 during previous connection will still be valid when a new connection
 is established.
 
-File with fileID 0 always points to a zero-length file.
+File with fileID 0 always points to a zero-length file, and cloning this files is how 
+new files are usually created.
 
 \subsection{Data Content Types}
 
@@ -369,7 +369,7 @@ Before committing the data on disk, Gostor runs the garbage collector
 to free all blocks that are no longer live. Then it assigns disk
 offsets to the remaining blocks, and updates the temporary offsets
 stored in the blocks to the permanent ones. It can do that because it
-has knowledge if a block contains references to other blocks. Once the
+has knowledge of whether a block contains references to other blocks. Once the
 references are updated, the blocks are stored on the disk. The
 temporary offsets can be used until they are ``forgotten''.
 
@@ -380,7 +380,7 @@ can reclaim data already written to the disk. There are plans for
 implementing copying, generational garbage collector that crawls
 through the existing data and copies the reachable blocks into new
 segments. Because of the high penalty of reading all existing data,
-the future implementation might be modified so in segregates blocks
+the future implementation might be modified so it segregates blocks
 that contain references to other blocks in separate segments.
 
 Once the Gostor prototype is stable enough, we plan to implement
