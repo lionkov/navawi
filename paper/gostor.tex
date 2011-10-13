@@ -41,8 +41,8 @@
 	flexibility for manipulating the data within the file,
 	including inserting and deleting data anywhere in the file,
 	creating and removing holes in the data, etc. Each
-	modification of the data creates a new file. Gostor isn't contrainted by 
-	organizing the files in hierarchical structures, or identifing them with strings. Thus Gostor can be
+	modification of the data creates a new file. Gostor isn't constrained by 
+	organizing the files in hierarchical structures, or identifying them with strings. Thus Gostor can be
 	used to implement standard file systems as well as
 	experimenting with new ways of storing and accessing users'
 	data.
@@ -119,8 +119,8 @@ to Gostor is closed. There is no guarantee that a fileID retrieved
 during previous connection will still be valid when a new connection
 is established.
 
-File with fileID 0 always points to a zero-length file, and cloning this files is how 
-new files are usually created.
+File with fileID 0 always points to a zero-length file, and cloning it
+is how new files are created.
 
 \subsection{Data Content Types}
 
@@ -195,13 +195,13 @@ can be used to modify the data.
 \begin{tabular}{lp{8cm}}
 Operation & Description \\
 \hline
-\verb|write(.., 10, 10, 100, data)| & Insert 100 bytes of
+\verb|write(.., 10, 10, 100, data,..)| & Insert 100 bytes of
 		data at offset 10 \\
-\verb|write(.., 10, 10, 100, nil)| & Insert 100 byte hole at
+\verb|write(.., 10, 10, 100, nil,..)| & Insert 100 byte hole at
 		offset 10 \\
-\verb|write(.., 10, 110, 0, nil)| & Delete 100 bytes of data
+\verb|write(.., 10, 110, 0, nil,..)| & Delete 100 bytes of data
 		starting at offset 10 \\
-\verb|write(.., 10, 110, 100, data)| & Overwrite 100 bytes of data
+\verb|write(.., 10, 110, 100, data,..)| & Overwrite 100 bytes of data
 		starting at offset 10 \\
 \end{tabular}
 \caption{Examples on data modifications using {\bfseries write}}
@@ -245,7 +245,7 @@ the list is set as active.
 
 The space within the segments is not divided into fixed-size chunks.
 Each segment consists of a number of variable-sized blocks. Each block
-can be up to $2^16$ bytes long (including the header). The header of
+can be up to $2^{16}$ bytes long (including the header). The header of
 the block contains its size as well as the type of the data it
 contains (data content type). The blocks always start at an even
 offset.
@@ -305,7 +305,7 @@ The {\bfseries write} operation uses the specified file's Btree as a base for th
 Btree of the newly created file. It creates new blocks for a sub-tree
 of the file, up to the new file's root block. While building a new
 tree, Gostor tries to coalesce neighboring blocks if their size is
-less than the allowed size ($2^16$ bytes for level 0 blocks and $8192$
+less than the allowed size ($2^{16}$ bytes for level 0 blocks and $8192$
 bytes for intermediate blocks). Gostor fills up the intermediate
 blocks with entries left-to-right so the rightmost affected block on
 the level is left unfilled. This approach is optimized for the
@@ -314,7 +314,8 @@ most-frequently use case when data is appended at the end of the file.
 Figure~\ref{fig:btree-write} shows the layout of the data when
 operation \verb|write(340, 700, 700, 162, data)| is performed on the
 file shown on Figure~\ref{fig:btree}. The operation inserts 150 bytes
-of data at offset 700 and increases the size of the hole with 12 bytes.
+of data at offset 700 and a 12 byte hole. Gostor coalesces the hole
+with the already existing one, so no new entry for the hole is created.
 
 \begin{figure*}[ht!]
 \begin{center}
