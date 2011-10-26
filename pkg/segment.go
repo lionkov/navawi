@@ -372,6 +372,7 @@ func fragmentFindBlock(btype uint16, buf []byte, offset uint64) (root uint64) {
 func (s *Segment) findBlock(btype uint16) (root uint64, err os.Error) {
 	var buf []byte
 
+	fmt.Printf("Segment.findBlock: segment size %d\n", s.size)
 	for offset:=uint64(SGHeaderSize); offset<uint64(s.size); {
 		buf, err = sm.dc.Read(offset, FGHeaderSize)
 		if err!=nil {
@@ -379,6 +380,11 @@ func (s *Segment) findBlock(btype uint16) (root uint64, err os.Error) {
 		}
 
 		sz, _ := gint32(buf[4:])
+		fmt.Printf("Segment.findBlock: fragment size %d\n", sz)
+		if sz==0 {
+			return 0, os.ENOENT
+		}
+
 		fr := fragmentFindBlock(btype, buf[16:], offset)
 		if fr != 0 {
 			root = fr

@@ -1,7 +1,7 @@
 package gostor
 
 import (
-_	"fmt"
+	"fmt"
 	"os"
 )
 
@@ -473,7 +473,7 @@ func blockSize(b *Block) uint64 {
 
 // copy data from the multiple []byte slices to a list of blocks of type ctype
 func copyToBlocks(ds [][]byte, datasz int, ctype uint16, maxblksz int) []*Block {
-
+	fmt.Printf("copyToBlocks ds %v datasz %d\n", ds, datasz)
 	bnum := datasz / maxblksz
 	if datasz%maxblksz != 0 {
 		bnum++
@@ -497,7 +497,6 @@ func copyToBlocks(ds [][]byte, datasz int, ctype uint16, maxblksz int) []*Block 
 		}
 
 		m := copy(blks[bi].Data[bpos:], ds[di][dpos:])
-
 		bpos += m
 		if len(blks[bi].Data) <= bpos {
 			bi++
@@ -536,7 +535,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	var l int
 	var rootblk *Block
 
-//	fmt.Printf("Write root %v start %v end %v count %d\n", root, start, end, count)
+	fmt.Printf("Write root %v start %v end %v count %d\n", root, start, end, count)
 	sbp, err := find(root, start)
 	if err != nil {
 		return 0, err
@@ -720,7 +719,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 	rootblk.SetRoot(true)
 	bc.Store(rootblk, true, nil)
-//	fmt.Printf("Store root block %v %v\n", rootblk.Offset, rootblk.Data)
+	fmt.Printf("Store root block %v %v\n", rootblk.Offset, rootblk.Data)
 	return rootblk.Offset, nil
 }
 
@@ -776,11 +775,11 @@ func (btdata) Id() uint16 {
 	return BTData
 }
 
-func (btdata) Blocks(b *Block) []uint64 {
+func (btdata) Files([]byte) []uint64 {
 	return nil
 }
 
-func (btdata) Commit(b *Block) bool {
+func (btdata) Commit([]byte) bool {
 	return true
 }
 
@@ -788,20 +787,20 @@ func (bn btnode) Id() uint16 {
 	return uint16(bn)
 }
 
-func (btnode) Blocks(b *Block) []uint64 {
-	bnum := len(b.Data) / BTEntrySize
+func (btnode) Files(data []byte) []uint64 {
+	bnum := len(data) / BTEntrySize
 	blks := make([]uint64, bnum)
 	for i :=0; i < bnum; i++ {
-		blks[i], _ = gint64(b.Data[i*BTEntrySize:(i+1)*BTEntrySize])
+		blks[i], _ = gint64(data[i*BTEntrySize:(i+1)*BTEntrySize])
 	}
 
 	return blks
 }
 
-func (btnode) Commit(b *Block) bool {
-	n := len(b.Data) / BTEntrySize
+func (btnode) Commit(data []byte) bool {
+	n := len(data) / BTEntrySize
 	for i := 0; i < n; i++ {
-		ent := b.Data[i*BTEntrySize:(i+1)*BTEntrySize]
+		ent := data[i*BTEntrySize:(i+1)*BTEntrySize]
 		bid, _ := gint64(ent)
 		if (bid%2) == 1 {
 			cb, err := bc.Get(bid)
@@ -825,9 +824,9 @@ var bdata btdata
 var bnodes [7]btnode
 
 func initBtree() {
-	bc.RegisterBlockType(bdata)
+	bc.RegisterDataType(bdata)
 	for i:=0; i<len(bnodes); i++ {
 		bnodes[i] = btnode(0x28b1+i)
-		bc.RegisterBlockType(bnodes[i])
+		bc.RegisterDataType(bnodes[i])
 	}
 }

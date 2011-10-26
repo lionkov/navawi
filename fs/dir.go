@@ -206,6 +206,7 @@ func encodeEntry(data []byte) {
 // Decode file entry by restoring the occurances of 0xFF and 0xFE, using the data
 // in the first four bytes of the array. First byte should always be 0xFF
 func decodeEntry(data []byte) {
+	fmt.Printf("decodeEntry len %d\n", len(data))
 	bits := uint32(data[1]) | (uint32(data[2]) << 8) | (uint32(data[3]) << 16)
 	for i:=0; i < len(data); i++ {
 		if data[i] == 0xFE {
@@ -418,7 +419,7 @@ func FindEntry(dir uint64, name string) (fi *FileInfo, err os.Error) {
 type btDirEntry int
 var btdirentry btDirEntry
 
-func (btDirEntry) Id() int {
+func (btDirEntry) Id() uint16 {
 	return BTDirEntry
 }
 
@@ -426,13 +427,18 @@ func (btDirEntry) Id() int {
 func (btDirEntry) Files(data []byte) []uint64 {
 	var bs []uint64
 
+	if len(data) == 0 {
+		return make([]uint64, 0)
+	}
+
 	for len(data) > 0 {
-		n := bytes.IndexByte(data, 0xFF)
+		n := bytes.IndexByte(data[1:], 0xFF)
 		if n < 0 {
 			n = len(data)
 		}
 
 		entry := data[0:n]
+		fmt.Printf("Files: decodeEntry len %d\n", n)
 		decodeEntry(entry)
 		id, _ := gint64(entry[48:])
 		encodeEntry(entry)
@@ -444,8 +450,12 @@ func (btDirEntry) Files(data []byte) []uint64 {
 }
 
 func (btDirEntry) Commit(data []byte) bool {
+	if len(data) == 0 {
+		return true
+	}
+
 	for len(data) > 0 {
-		n := bytes.IndexByte(data, 0xFF)
+		n := bytes.IndexByte(data[1:], 0xFF)
 		if n < 0 {
 			n = len(data)
 		}

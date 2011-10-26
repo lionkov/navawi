@@ -37,6 +37,12 @@ func Init(diskname string) os.Error {
 	}
 
 	dc = NewDiskCache(d, Conf.Dcacheblksz, Conf.Dcachesz)
+
+	sm, err = NewSegmentManager(dc, d)
+	if err != nil {
+		return err
+	}
+
 	bc, err = NewBlockCache(dc, d, Conf.Bcachesz)
 	if err!=nil {
 		d.Close()
@@ -119,5 +125,21 @@ func Find(btype uint16) (uint64, os.Error) {
 	}
 
 	// search the committed blocks
-	return bc.sm.FindBlock(btype)
+	return sm.FindBlock(btype)
+}
+
+func Size(root uint64) (uint64, os.Error) {
+	b, err := bc.Get(root)
+	if err!= nil {
+		return 0, err
+	}
+
+	nent := len(b.Data)/BTEntrySize
+	sz := uint64(0)
+	for i:=0; i<nent; i++ {
+		n, _ := gint64(b.Data[i*BTEntrySize:])
+		sz += n
+	}
+
+	return sz, nil
 }

@@ -29,7 +29,8 @@ const (	// Predefined Block Types
 
 const (
 	MaxNoncommitSize = 10*1024*1024	// 10MB
-	MaxCommitTime = 30000000000	// 30s
+	MaxCommitTime = 3000000000	// 3s
+//	MaxCommitTime = 30000000000	// 30s
 )
 
 const (
@@ -49,7 +50,7 @@ type Block struct {
 	ucid		uint64	// uncommitted id, if any
 
 	// uncommitted blocks only
-	bt		BlockType
+	bt		DataType
 	ucprev, ucnext	*Block	// list of uncommitted blocks
 	coffset	uint64		// BlockCache.coffset at the time the block is stored
 	blkref		[]uint64// list of IDs of blocks referenced by the block
@@ -63,12 +64,12 @@ type BlockCache struct {
 	sync.Mutex
 	err		os.Error
 	dc		*DiskCache
-	sm		*SegmentManager
 	maxcount	uint32
 	maxucsize	uint32
 	cache		map[uint64] *Block
 	lru, mru	*Block
-	blktypes	map[uint16] BlockType
+	dtypes		map[uint16] DataType
+	nullblk		*Block
 
 	// uncommitted blocks
 	ucoffset	uint64	// next odd integer to use as id for uncommitted blocks
@@ -80,10 +81,10 @@ type BlockCache struct {
 	commitchan	chan chan bool
 }
 
-type BlockType interface {
+type DataType interface {
 	Id() uint16
-	Blocks(b *Block) []uint64
-	Commit(b *Block) bool
+	Files(data []byte) []uint64
+	Commit(data []byte) bool
 }
 
 type StrError string
@@ -93,8 +94,6 @@ func (s StrError) String() string {
 }
 
 func NewBlockCache(dc *DiskCache, disk *os.File, maxcount uint32) (*BlockCache, os.Error) {
-	var err os.Error
-
 	bc := new(BlockCache)
 	bc.dc = dc
 	bc.maxcount = maxcount
@@ -103,12 +102,14 @@ func NewBlockCache(dc *DiskCache, disk *os.File, maxcount uint32) (*BlockCache, 
 	bc.liveblocks = make(map[uint64] *Block)
 	bc.maxucsize = MaxNoncommitSize
 	bc.commitchan = make(chan chan bool)
-	bc.blktypes = make(map[uint16] BlockType)
+	bc.dtypes = make(map[uint16] DataType)
 
-	bc.sm, err = NewSegmentManager(dc, disk)
-	if err!=nil {
-		return nil, err
-	}
+	nblk := new(Block)
+	nblk.Offset = 0
+	nblk.blktype = BTData
+	nblk.Length = 0
+	nblk.Data = make([]byte, 0)
+	bc.nullblk = nblk
 
 	go bc.commitproc()
 	return bc, nil
@@ -116,34 +117,38 @@ func NewBlockCache(dc *DiskCache, disk *os.File, maxcount uint32) (*BlockCache, 
 
 func (bc *BlockCache) commitproc() {
 	var c chan bool
+	var err os.Error
 
 	tick := time.Tick(MaxCommitTime)
 	for {
 		c = nil
 		select {
 		case _ = <- tick:
-		case c = <- bc.commitchan:
-			err :=bc.commit()
-			if err != nil {
-				bc.Lock()
-				if bc.err == nil {
-					bc.err = err
-				}
-				bc.Unlock()
-				if c!=nil {
-					c<-false
-				}
-				return
-			}
+			err = bc.commit()
 
-			if c!=nil {
-				c<-true
+		case c = <- bc.commitchan:
+			err =bc.commit()
+		}
+
+		if err != nil {
+			bc.Lock()
+			if bc.err == nil {
+				bc.err = err
 			}
+			bc.Unlock()
+			if c!=nil {
+				c<-false
+			}
+			return
+		}
+
+		if c!=nil {
+			c<-true
 		}
 	}		
 }
 
-func (bc *BlockCache) RegisterBlockType(bt BlockType) bool {
+func (bc *BlockCache) RegisterDataType(bt DataType) bool {
 	id := bt.Id()
 	if id >= BTRoot {
 		return false
@@ -151,16 +156,21 @@ func (bc *BlockCache) RegisterBlockType(bt BlockType) bool {
 
 	bc.Lock()
 	defer bc.Unlock()
-	if bc.blktypes[id]!=nil {
+	if bc.dtypes[id]!=nil {
 		return false
 	}
 
-	bc.blktypes[id] = bt
+	bc.dtypes[id] = bt
 	return true
+}
+
+func RegisterDataType(bt DataType) bool {
+	return bc.RegisterDataType(bt)
 }
 
 // reads a block from the disk and parses the header
 func (bc *BlockCache) readBlock(offset uint64, b *Block) os.Error {
+	fmt.Printf("BlockCache.readBlock offset %d\n", offset)
 	b.Offset = offset
 	hdr, err := bc.dc.Read(offset, BTHeaderSize)
 	if err!=nil {
@@ -170,6 +180,8 @@ func (bc *BlockCache) readBlock(offset uint64, b *Block) os.Error {
 //	fmt.Printf("BlockCache.readBlock: offset %v header %v\n", offset, hdr)
 	magic, p := gint32(hdr)
 	if magic != BTMagic {
+		var str *string
+		*str = "boo"
 		return StrError("invalid block header")
 	}
 
@@ -203,6 +215,10 @@ func (bc *BlockCache) makeSpace() {
 
 func (bc *BlockCache) Get(offset uint64) (*Block, os.Error) {
 	var err os.Error
+
+	if offset==0 {
+		return bc.nullblk, nil
+	}
 
 	err = nil
 	bc.Lock()
@@ -403,9 +419,9 @@ func (bc *BlockCache) mark(b *Block) {
 	}
 
 	if b.bt==nil {
-		b.bt = bc.blktypes[btype]
+		b.bt = bc.dtypes[btype]
 		if b.blkref==nil {
-			b.blkref = b.bt.Blocks(b)
+			b.blkref = b.bt.Files(b.Data)
 		}
 	}
 
@@ -431,7 +447,7 @@ func (bc *BlockCache) commit() os.Error {
 		return nil
 	}
 
-	frag, err := bc.sm.AllocFragment(uint32(bc.ucfirst.Length + BTHeaderSize), bc.ucsize)
+	frag, err := sm.AllocFragment(uint32(bc.ucfirst.Length + BTHeaderSize), bc.ucsize)
 	if err!=nil {
 		bc.Unlock()
 		return err
@@ -491,7 +507,7 @@ func (bc *BlockCache) commit() os.Error {
 	p := buf
 	for bb:=sb; bb!=b; bb = bb.ucnext {
 		if bb.bt != nil {
-			bb.bt.Commit(bb)
+			bb.bt.Commit(bb.Data)
 		}
 
 		m := bb.Length
@@ -513,11 +529,11 @@ func (bc *BlockCache) commit() os.Error {
 	}
 	bc.Unlock()
 
-	return bc.sm.CommitFragment(frag, n)
+	return sm.CommitFragment(frag, n)
 }
 
 func (bc *BlockCache) NewBlock(blktype uint16, root bool, length uint16) *Block {
-	if bc.blktypes[blktype] == nil {
+	if bc.dtypes[blktype] == nil {
 		return nil
 	}
 

@@ -80,6 +80,8 @@ func CreateSuper() os.Error {
 	super.nextpath = 1
 	root := new(File)
 	root.Mode = p.DMDIR | 0777
+	root.Qid.Type = p.QTDIR
+	root.Qid.Path = NextPath()
 	root.Uid = fs.user.Name()
 	root.Uidnum = uint32(fs.user.Id())
 	root.Muid = root.Uid
@@ -94,25 +96,25 @@ func CreateSuper() os.Error {
 	return UpdateSuper()
 }
 
-func (btSuper) Id() int {
+func (btSuper) Id() uint16 {
 	return BTSuper
 }
 
 // We write whole entries, so blocks should contain only whole entries
 func (btSuper) Files(data []byte) []uint64 {
 	bs := make([]uint64, 1)
-	bs[0], _ = gint64(data[len(data) - 8:])
+	bs[0], _ = gint64(data[len(data) - 16:])
 	return bs
 }
 
 func (btSuper) Commit(data []byte) bool {
-	id, _ := gint64(data[len(data) - 8:])
+	id, _ := gint64(data[len(data) - 16:])
 	newid, err := gostor.Id(id)
 	if err != nil {
-		fmt.Printf("btSuper.Commit: Error %v\n", err)
+		fmt.Printf("btSuper.Commit: id %d root %d Error %v\n", id, super.root.Root, err)
 		return false
 	}
 
-	pint64(newid, data[len(data) - 8:])
+	pint64(newid, data[len(data) - 16:])
 	return true
 }

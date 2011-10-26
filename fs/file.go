@@ -35,9 +35,16 @@ func (dir *File) Find(name string) (*File, os.Error) {
 
 	f = new(File)
 	f.dir = dir
+	if dir.children==nil {
+		dir.children = make(map[string]*File)
+	}
+
 	dir.children[name] = f
 	fi, f.err = FindEntry(dir.Root, name)
-	f.FileInfo = *fi
+	if f.err==nil {
+		f.FileInfo = *fi
+	}
+
 	f.Ref()
 	dir.wlock.Unlock()
 	return f, f.err
@@ -111,6 +118,10 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 
 	newroot, err := CreateEntry(dir.Root, &f.FileInfo)
 	f.err = err
+	if dir.children==nil {
+		dir.children=make(map[string]*File)
+	}
+
 	dir.children[name] = f
 	if err != nil {
 		// we got an error, return it
