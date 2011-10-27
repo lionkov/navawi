@@ -10,8 +10,8 @@ import (
 
 const (
 	DirEntrySize = 70
-	BTDirEntry = 0x0001
-	BTSuper = 0x0002
+	BTDirEntry = 0x789a
+	BTSuper = 0x6789
 )
 
 type FileInfo struct {
@@ -277,6 +277,7 @@ func sizeFileInfo(fi *FileInfo) uint32 {
 	sz := 4 + 		// marker + Fxbits
 		13 +		// Qid[13]
 		4 + 		// Mode[4]
+		4 +		// Mtime[4]
 		8 + 		// Length[8]
 		2 + len(name) +	// Name[n]
 		2 + len(uid) +	// Uid[n]
@@ -307,6 +308,7 @@ func encodeFileInfo(fi *FileInfo, buf []byte) ([]byte, int) {
 	p = pint32(fi.Version, p)
 	p = pint64(fi.Path, p)
 	p = pint32(fi.Mode, p)
+	p = pint32(fi.Mtime, p)
 	p = pint64(fi.Length, p)
 	p = pslice(name, p)
 	p = pslice(uid, p)
@@ -334,6 +336,7 @@ func decodeFileInfo(entry []byte, fi *FileInfo) {
 	fi.Version, p = gint32(p)
 	fi.Path, p = gint64(p)
 	fi.Mode, p = gint32(p)
+	fi.Mtime, p = gint32(p)
 	fi.Length, p = gint64(p)
 	fi.Name, p = gstr(p)
 	fi.Uid, p = gstr(p)
@@ -438,9 +441,8 @@ func (btDirEntry) Files(data []byte) []uint64 {
 		}
 
 		entry := data[0:n]
-		fmt.Printf("Files: decodeEntry len %d\n", n)
 		decodeEntry(entry)
-		id, _ := gint64(entry[48:])
+		id, _ := gint64(entry[len(entry) - 8:])
 		encodeEntry(entry)
 		bs = append(bs, id)
 		data = data[n:]
@@ -462,7 +464,7 @@ func (btDirEntry) Commit(data []byte) bool {
 
 		entry := data[0:n]
 		decodeEntry(entry)
-		id, _ := gint64(entry[48:])
+		id, _ := gint64(entry[len(entry) - 8:])
 		newid, err := gostor.Id(id)
 		if err!=nil {
 			fmt.Printf("btDirEntry.Commit: Error %v\n", err)
@@ -471,6 +473,7 @@ func (btDirEntry) Commit(data []byte) bool {
 
 		pint64(newid, entry[48:])
 		encodeEntry(entry)
+		data = data[n:]
 	}
 
 	return true

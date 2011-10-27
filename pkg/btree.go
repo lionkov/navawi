@@ -473,7 +473,7 @@ func blockSize(b *Block) uint64 {
 
 // copy data from the multiple []byte slices to a list of blocks of type ctype
 func copyToBlocks(ds [][]byte, datasz int, ctype uint16, maxblksz int) []*Block {
-	fmt.Printf("copyToBlocks ds %v datasz %d\n", ds, datasz)
+//	fmt.Printf("copyToBlocks ds %v datasz %d\n", ds, datasz)
 	bnum := datasz / maxblksz
 	if datasz%maxblksz != 0 {
 		bnum++

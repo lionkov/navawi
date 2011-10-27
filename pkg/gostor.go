@@ -134,6 +134,10 @@ func Size(root uint64) (uint64, os.Error) {
 		return 0, err
 	}
 
+	if b.blktype<BTNode1 || b.blktype>BTNode7 {
+		return uint64(len(b.Data)), nil
+	}
+
 	nent := len(b.Data)/BTEntrySize
 	sz := uint64(0)
 	for i:=0; i<nent; i++ {

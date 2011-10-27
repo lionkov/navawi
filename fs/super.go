@@ -30,7 +30,7 @@ func NextPath() uint64 {
 func ReadSuper() os.Error {
 	var err os.Error
 
-	super.id, err = gostor.Find(BTSuper)
+	super.id, err = gostor.Find(BTSuper|gostor.BTRoot)
 	if err!=nil {
 		return err
 	}
@@ -51,6 +51,7 @@ func ReadSuper() os.Error {
 	super.root.Ref()
 	super.nextpath, _ = gint64(buf[super.blocksz-8:])
 
+	fmt.Printf("Super block %d found, root %d nextpath %d\n", super.id, super.root.Root, super.nextpath)
 	return nil
 }
 
@@ -62,12 +63,14 @@ func UpdateSuper() os.Error {
 	data := make([]byte, sz + 8)
 	encodeFileInfo(&super.root.FileInfo, data)
 	pint64(super.nextpath, data[sz:])
+//	fmt.Printf("UpdateSuper: root %d %v\n", super.root.Root, data)
 	id, err := gostor.Write(super.id, 0, super.blocksz, len(data), data, BTSuper)
 	if err!=nil {
 		super.Unlock()
 		return nil
 	}
 
+	fmt.Printf("UpdateSuper: new super %d\n", id)
 	super.id = id
 	super.blocksz = uint64(len(data))
 	super.Unlock()
@@ -104,11 +107,14 @@ func (btSuper) Id() uint16 {
 func (btSuper) Files(data []byte) []uint64 {
 	bs := make([]uint64, 1)
 	bs[0], _ = gint64(data[len(data) - 16:])
+
+	fmt.Printf("btSuper.Files id %d\n", bs[0])
 	return bs
 }
 
 func (btSuper) Commit(data []byte) bool {
 	id, _ := gint64(data[len(data) - 16:])
+	fmt.Printf("btSuper.Commit id %d\n", id)
 	newid, err := gostor.Id(id)
 	if err != nil {
 		fmt.Printf("btSuper.Commit: id %d root %d Error %v\n", id, super.root.Root, err)

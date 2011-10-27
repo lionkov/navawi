@@ -43,8 +43,8 @@ type Block struct {
 
 	// Data Layout on disk
 //	magic		uint32
-	blktype		uint16	// block type
 	Length		uint16
+	blktype		uint16	// block type
 	Data		[]byte
 	raw		[]byte	// raw data, including the header
 	ucid		uint64	// uncommitted id, if any
@@ -398,7 +398,7 @@ func (bc *BlockCache) gc() {
 			// remove from the cache
 			bc.cache[b.Offset] = nil, false
 
-			bc.ucsize -= uint32(b.Length + BTHeaderSize)
+			bc.ucsize -= uint32(b.Length + b.Length%2 + BTHeaderSize)
 		}
 
 		b.color = CBlack
@@ -420,9 +420,11 @@ func (bc *BlockCache) mark(b *Block) {
 
 	if b.bt==nil {
 		b.bt = bc.dtypes[btype]
-		if b.blkref==nil {
-			b.blkref = b.bt.Files(b.Data)
-		}
+	}
+
+	if b.blkref==nil {
+		fmt.Printf("BlockCache.mark %d\n", b.Offset)
+		b.blkref = b.bt.Files(b.Data)
 	}
 
 	if b.blkref==nil {
@@ -432,6 +434,10 @@ func (bc *BlockCache) mark(b *Block) {
 	for bs, i := b.blkref, 0; i< len(bs); i++ {
 		if bs[i]%2 == 1 {
 			// mark only uncommitted blocks
+			bb := bc.cache[bs[i]]
+			if bb==nil {
+				fmt.Printf("block with id %d doesn't exist\n", bs[i])
+			}
 			bc.mark(bc.cache[bs[i]])
 		}
 	}
@@ -447,6 +453,7 @@ func (bc *BlockCache) commit() os.Error {
 		return nil
 	}
 
+	fmt.Printf("BlockCache.commit ucsize %d ucfirst %p\n", bc.ucsize, bc.ucfirst)
 	frag, err := sm.AllocFragment(uint32(bc.ucfirst.Length + BTHeaderSize), bc.ucsize)
 	if err!=nil {
 		bc.Unlock()
@@ -468,6 +475,7 @@ func (bc *BlockCache) commit() os.Error {
 		}
 
 //		fmt.Printf("BlockCache.commit block %p offset %v type %v length %v\n", b, offset, b.blktype, b.Length)
+		fmt.Printf("BlockCache.commit %d --> %d\n", b.Offset, offset)
 		bc.coffset = b.Offset
 		b.ucid = b.Offset
 		b.Offset = offset

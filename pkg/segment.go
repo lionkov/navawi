@@ -354,23 +354,39 @@ func (sm *SegmentManager) CommitFragment(frag *Fragment, datasz uint32) os.Error
 	return err
 }
 
-func fragmentFindBlock(btype uint16, buf []byte, offset uint64) (root uint64) {
-	for len(buf) > 0 {
-		bt, p := gint16(buf[4:])
+func fragmentFindBlock(btype uint16, buf []byte, offset uint64) (root uint64, err os.Error) {
+	for len(buf) >= BTHeaderSize {
+		m, _ := gint32(buf)
+		if m!=BTMagic {
+			err = os.NewError(fmt.Sprintf("invalid block magic at offset %d", offset))
+			return
+		}
+
+		sz, p := gint16(buf[4:])
+		if sz==0 {
+			fmt.Printf("fragmentFindBlock: sz 0 buf %v\n", buf)
+			break
+		}
+
+		bt, _ := gint16(p)
+		fmt.Printf("fragmentFindBlock: offset %d sz %d type %x looking for %x\n", offset, sz, bt, btype)
 		if bt==btype {
 			root = offset
 		}
 
-		sz, _ := gint16(p)
-		buf = buf[sz + BTHeaderSize:]
-		offset += uint64(sz + BTHeaderSize)
+		sz += BTHeaderSize
+		buf = buf[sz:]
+		offset += uint64(sz)
+		fmt.Printf("fragmentFindBlock: remaining %d\n", len(buf))
 	}
 
+//	fmt.Printf("block root %d\n", root)
 	return
 }
 
 func (s *Segment) findBlock(btype uint16) (root uint64, err os.Error) {
 	var buf []byte
+	var fr uint64
 
 	fmt.Printf("Segment.findBlock: segment size %d\n", s.size)
 	for offset:=uint64(SGHeaderSize); offset<uint64(s.size); {
@@ -379,18 +395,36 @@ func (s *Segment) findBlock(btype uint16) (root uint64, err os.Error) {
 			return
 		}
 
-		sz, _ := gint32(buf[4:])
-		fmt.Printf("Segment.findBlock: fragment size %d\n", sz)
-		if sz==0 {
-			return 0, os.ENOENT
+		m, _ := gint32(buf)
+		if m!=FGMagic {
+			return 0, os.NewError(fmt.Sprintf("invalid fragment magic at offset %d", offset))
 		}
 
-		fr := fragmentFindBlock(btype, buf[16:], offset)
+		sz, _ := gint32(buf[4:])
+		if sz==0 {
+			break
+		}
+
+		fmt.Printf("Segment.findBlock: fragment size %d header %v\n", sz, buf)
+		buf, err = sm.dc.Read(offset+FGHeaderSize, sz-FGHeaderSize)
+		if err!=nil {
+			return
+		}
+
+		fr, err = fragmentFindBlock(btype, buf, offset+FGHeaderSize)
+		if err!=nil {
+			return
+		}
+
 		if fr != 0 {
 			root = fr
 		}
 
 		offset += uint64(sz)
+	}
+
+	if root==0 {
+		err = os.ENOENT
 	}
 
 	return
@@ -413,6 +447,10 @@ func (sm *SegmentManager) FindBlock(btype uint16) (root uint64, err os.Error) {
 		if err != nil {
 			break
 		}
+	}
+
+	if err!=nil {
+		fmt.Printf("SegmentManager.FindBlock err %s\n", err)
 	}
 
 	return
