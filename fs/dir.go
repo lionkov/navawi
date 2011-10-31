@@ -115,6 +115,7 @@ func findEntry(dir, offset uint64) (uint64, []byte, os.Error) {
 	var pos int
 	var buf []byte
 
+	fmt.Printf("findEntry offset %d\n", offset)
 	// read forward until we find 0xFF
 	for {
 		if buf==nil {
@@ -131,27 +132,30 @@ func findEntry(dir, offset uint64) (uint64, []byte, os.Error) {
 			return 0, nil, err
 		}
 
+		buf = buf[0:pos+n]
 		if n==0 {
-			return 0, nil, os.EOF
+			break
+//			return 0, nil, os.EOF
 		}
 
-		buf = buf[0:pos+n]
 		if m := bytes.IndexByte(buf[pos:], 0xFF); m >= 0 {
 			buf = buf[0:m]
 			break
 		}
 	}
 
+	fmt.Printf("findEntry: read forward %d bytes\n", len(buf))
 	// read backward until we find 0xFF
 L:
 	for {
 		size := DirEntrySize*2
-		if offset-uint64(size) < 0 {
+		if int64(offset)-int64(size) < 0 {
 			size = int(offset)
 		}
 
 		tbuf := make([]byte, len(buf) + size)
 		copy(tbuf[size:], buf)
+		buf = tbuf
 		n, err := gostor.Read(dir, offset - uint64(size), buf[0:size])
 		if err!=nil {
 			return 0, nil, err
@@ -161,8 +165,8 @@ L:
 			return 0, nil, os.NewError("short read")
 		}
 
-		offset -= uint64(size)
 		for i:=size-1; i>=0; i-- {
+			offset--
 			if buf[i] == 0xFF {
 				buf = buf[i:]
 				break L
@@ -170,6 +174,7 @@ L:
 		}
 	}
 
+	fmt.Printf("findEntry: read backward to offset %d len %d\n", offset, len(buf))
 	return offset, buf, nil
 }
 
@@ -220,8 +225,8 @@ func decodeEntry(data []byte) {
 }
 
 func entryName(data []byte) string {
-	sz, _ := gint16(data[48:])
-	return string(data[50:50+sz])
+	sz, _ := gint16(data[33:])
+	return string(data[35:35+sz])
 }
 
 // Does binary search in the directory file, looking for the specified name
@@ -415,6 +420,7 @@ func FindEntry(dir uint64, name string) (fi *FileInfo, err os.Error) {
 	decodeFileInfo(entry, fi)
 	fi.entryOffset = offset
 	fi.entrySize = uint64(len(entry))
+	fmt.Printf("FindEntry: root %d\n", fi.Root)
 
 	return fi, nil
 }

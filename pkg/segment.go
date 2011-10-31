@@ -358,7 +358,7 @@ func fragmentFindBlock(btype uint16, buf []byte, offset uint64) (root uint64, er
 	for len(buf) >= BTHeaderSize {
 		m, _ := gint32(buf)
 		if m!=BTMagic {
-			err = os.NewError(fmt.Sprintf("invalid block magic at offset %d", offset))
+			err = os.NewError(fmt.Sprintf("invalid block magic at offset %d expected %x got %x", offset, BTMagic, m))
 			return
 		}
 
@@ -374,7 +374,8 @@ func fragmentFindBlock(btype uint16, buf []byte, offset uint64) (root uint64, er
 			root = offset
 		}
 
-		sz += BTHeaderSize
+		sz += sz%2 + BTHeaderSize
+		
 		buf = buf[sz:]
 		offset += uint64(sz)
 		fmt.Printf("fragmentFindBlock: remaining %d\n", len(buf))
@@ -396,8 +397,12 @@ func (s *Segment) findBlock(btype uint16) (root uint64, err os.Error) {
 		}
 
 		m, _ := gint32(buf)
+		if m==SGSealed || m==SGUnsealed {
+			break
+		}
+
 		if m!=FGMagic {
-			return 0, os.NewError(fmt.Sprintf("invalid fragment magic at offset %d", offset))
+			return 0, os.NewError(fmt.Sprintf("invalid fragment magic at offset %d expected %x got %x", offset, FGMagic, m))
 		}
 
 		sz, _ := gint32(buf[4:])
