@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -114,6 +115,7 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 	f.Gidnum = uint32(gid.Id())
 	f.Muidnum = uint32(uid.Id())
 	f.Root = 0
+	f.dir = dir
 	f.Ref()
 
 	newroot, err := CreateEntry(dir.Root, &f.FileInfo)
@@ -225,6 +227,7 @@ func (f *File) Wstat(fi *FileInfo) os.Error {
 func (f *File) update() os.Error {
 	for d := f.dir; d != nil; f, d = d, d.dir {
 		d.wlock.Lock()
+		fmt.Printf("File %s new root %d\n", f.Name, f.Root)
 		newroot, err := ModifyEntry(d.Root, &f.FileInfo)
 		if err != nil {
 			d.wlock.Unlock()

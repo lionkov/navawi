@@ -608,7 +608,9 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		if rholesz==0 && ee.Block != nil {
 //			fmt.Printf("partially overwritten at the end: len(e.Data) %d e.start %v e.end %v end %v pos %v\n", len(ebp.entries[l].Data), ebp.entries[l].start, ebp.entries[l].end, end, ebp.entries[l].pos*BTEntrySize)
 			if l==0 {
-				ds[3] = ee.Data[ee.pos - ee.start:]
+				if ee.pos - ee.start < uint64(len(ee.Data)) {
+					ds[3] = ee.Data[ee.pos - ee.start:]
+				}
 			} else {
 				ds[3] = ee.Data[ee.pos * BTEntrySize:]
 			}

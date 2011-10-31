@@ -10,8 +10,8 @@ import (
 
 const (
 	DirEntrySize = 70
-	BTDirEntry = 0x789a
-	BTSuper = 0x6789
+	BTDirEntry = 0x1234
+	BTSuper = 0x5678
 )
 
 type FileInfo struct {
@@ -115,7 +115,7 @@ func findEntry(dir, offset uint64) (uint64, []byte, os.Error) {
 	var pos int
 	var buf []byte
 
-	fmt.Printf("findEntry offset %d\n", offset)
+//	fmt.Printf("findEntry offset %d\n", offset)
 	// read forward until we find 0xFF
 	for {
 		if buf==nil {
@@ -144,7 +144,7 @@ func findEntry(dir, offset uint64) (uint64, []byte, os.Error) {
 		}
 	}
 
-	fmt.Printf("findEntry: read forward %d bytes\n", len(buf))
+//	fmt.Printf("findEntry: read forward %d bytes\n", len(buf))
 	// read backward until we find 0xFF
 L:
 	for {
@@ -174,7 +174,7 @@ L:
 		}
 	}
 
-	fmt.Printf("findEntry: read backward to offset %d len %d\n", offset, len(buf))
+//	fmt.Printf("findEntry: read backward to offset %d len %d\n", offset, len(buf))
 	return offset, buf, nil
 }
 
@@ -211,7 +211,7 @@ func encodeEntry(data []byte) {
 // Decode file entry by restoring the occurances of 0xFF and 0xFE, using the data
 // in the first four bytes of the array. First byte should always be 0xFF
 func decodeEntry(data []byte) {
-	fmt.Printf("decodeEntry len %d\n", len(data))
+//	fmt.Printf("decodeEntry len %d\n", len(data))
 	bits := uint32(data[1]) | (uint32(data[2]) << 8) | (uint32(data[3]) << 16)
 	for i:=0; i < len(data); i++ {
 		if data[i] == 0xFE {
@@ -420,7 +420,7 @@ func FindEntry(dir uint64, name string) (fi *FileInfo, err os.Error) {
 	decodeFileInfo(entry, fi)
 	fi.entryOffset = offset
 	fi.entrySize = uint64(len(entry))
-	fmt.Printf("FindEntry: root %d\n", fi.Root)
+//	fmt.Printf("FindEntry: root %d\n", fi.Root)
 
 	return fi, nil
 }
@@ -454,6 +454,7 @@ func (btDirEntry) Files(data []byte) []uint64 {
 		data = data[n:]
 	}
 
+//	fmt.Printf("btDirEntry.Files: %v\n", bs)
 	return bs
 }
 
@@ -477,7 +478,8 @@ func (btDirEntry) Commit(data []byte) bool {
 			return false
 		}
 
-		pint64(newid, entry[48:])
+//		fmt.Printf("btDirEntry.Commit: %d -> %d\n", id, newid)
+		pint64(newid, entry[len(entry) - 8:])
 		encodeEntry(entry)
 		data = data[n:]
 	}
