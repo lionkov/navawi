@@ -11,7 +11,7 @@ import (
 var disk *string = flag.String("disk", "gostor", "gostor disk")
 
 func main() {
-	var err os.Error
+	var err error
 	var d *os.File
 
 	flag.Parse()

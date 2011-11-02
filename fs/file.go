@@ -2,32 +2,32 @@ package main
 
 import (
 	"fmt"
+	"go9p.googlecode.com/hg/p"
+	"gostor"
 	"os"
 	"sync"
 	"sync/atomic"
 	"time"
-	"gostor"
-	"go9p.googlecode.com/hg/p"
 )
 
 type File struct {
 	sync.Mutex
 	FileInfo
-	err		os.Error
-	wlock		sync.Mutex
-	dir		*File
-	ref		int32
+	err   error
+	wlock sync.Mutex
+	dir   *File
+	ref   int32
 
-	next, prev	*File			// next sibling
-	children	map[string]*File	// list of children, if directory
+	next, prev *File            // next sibling
+	children   map[string]*File // list of children, if directory
 }
 
-func (dir *File) Find(name string) (*File, os.Error) {
+func (dir *File) Find(name string) (*File, error) {
 	var fi *FileInfo
 
 	dir.wlock.Lock()
 	f := dir.children[name]
-	if f!=nil {
+	if f != nil {
 		f.Ref()
 		dir.wlock.Unlock()
 		return f, f.err
@@ -35,13 +35,13 @@ func (dir *File) Find(name string) (*File, os.Error) {
 
 	f = new(File)
 	f.dir = dir
-	if dir.children==nil {
+	if dir.children == nil {
 		dir.children = make(map[string]*File)
 	}
 
 	dir.children[name] = f
 	fi, f.err = FindEntry(dir.Root, name)
-	if f.err==nil {
+	if f.err == nil {
 		f.FileInfo = *fi
 	}
 
@@ -49,12 +49,12 @@ func (dir *File) Find(name string) (*File, os.Error) {
 	dir.wlock.Unlock()
 	return f, f.err
 }
-	
-func (f *File) Remove() os.Error {
+
+func (f *File) Remove() error {
 	dir := f.dir
 
 	dir.wlock.Lock()
-	if f.err!=nil {
+	if f.err != nil {
 		dir.Unlock()
 		return f.err
 	}
@@ -68,7 +68,7 @@ func (f *File) Remove() os.Error {
 	dir.Root = newroot
 
 	// remove the file from the children map
-	dir.children[f.Name] = nil, false
+	delete(dir.children, f.Name)
 
 	// update offsets for all files
 	offset := f.entryOffset
@@ -83,11 +83,11 @@ func (f *File) Remove() os.Error {
 	return dir.update()
 }
 
-func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext string) (*File, os.Error) {
+func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext string) (*File, error) {
 	path := NextPath()
 	dir.wlock.Lock()
 	f := dir.children[name]
-	if f!=nil {
+	if f != nil {
 		if f.err == nil || f.err != os.ENOENT {
 			err := f.err
 			dir.wlock.Unlock()
@@ -100,11 +100,11 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 	}
 
 	f = new(File)
-	f.Qid.Type = uint8(mode>>24)
+	f.Qid.Type = uint8(mode >> 24)
 	f.Path = path
 	f.Version = 1
 	f.Mode = mode
-	f.Mtime = uint32(time.Seconds()>>32 / 1000000000)
+	f.Mtime = uint32(time.Seconds() >> 32 / 1000000000)
 	f.Length = 0
 	f.Name = name
 	f.Uid = uid.Name()
@@ -120,8 +120,8 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 
 	newroot, err := CreateEntry(dir.Root, &f.FileInfo)
 	f.err = err
-	if dir.children==nil {
-		dir.children=make(map[string]*File)
+	if dir.children == nil {
+		dir.children = make(map[string]*File)
 	}
 
 	dir.children[name] = f
@@ -135,7 +135,7 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 	gostor.Forget(dir.Root)
 	dir.Root = newroot
 	for _, c := range dir.children {
-		if c!=f && c.entryOffset >= f.entryOffset {
+		if c != f && c.entryOffset >= f.entryOffset {
 			c.entryOffset += f.entrySize
 		}
 	}
@@ -145,7 +145,7 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 
 func (f *File) Ref() {
 	fmt.Printf("File.Ref %p\n", f)
-	if f==nil {
+	if f == nil {
 		return
 	}
 
@@ -154,7 +154,7 @@ func (f *File) Ref() {
 
 func (f *File) Unref() {
 	fmt.Printf("File.Unref %p\n", f)
-	if f==nil {
+	if f == nil {
 		return
 	}
 
@@ -166,7 +166,7 @@ func (f *File) Unref() {
 	gostor.Forget(f.Root)
 }
 
-func (f *File) Read(offset uint64, buf []byte) (int, os.Error) {
+func (f *File) Read(offset uint64, buf []byte) (int, error) {
 	f.Lock()
 	root := f.Root
 	f.Unlock()
@@ -176,10 +176,10 @@ func (f *File) Read(offset uint64, buf []byte) (int, os.Error) {
 	return count, err
 }
 
-func (f *File) Write(offset uint64, buf []byte) (int, os.Error) {
+func (f *File) Write(offset uint64, buf []byte) (int, error) {
 	f.wlock.Lock()
 	newroot, err := gostor.Write(f.Root, offset, offset+uint64(len(buf)), len(buf), buf, gostor.BTData)
-	if err!=nil {
+	if err != nil {
 		f.wlock.Unlock()
 		return 0, err
 	}
@@ -187,24 +187,24 @@ func (f *File) Write(offset uint64, buf []byte) (int, os.Error) {
 	f.Root = newroot
 	f.wlock.Unlock()
 	err = f.update()
-	
+
 	return len(buf), err
 }
 
-func (f *File) Wstat(fi *FileInfo) os.Error {
+func (f *File) Wstat(fi *FileInfo) error {
 	var newdir uint64
-	var err os.Error
+	var err error
 
 	if fi.Length != f.Length {
 		if fi.Length > f.Length {
-			newroot, err := gostor.Write(f.Root, f.Length, f.Length, int(fi.Length - f.Length), nil, gostor.BTData)
-			if err!= nil {
+			newroot, err := gostor.Write(f.Root, f.Length, f.Length, int(fi.Length-f.Length), nil, gostor.BTData)
+			if err != nil {
 				return err
 			}
 			fi.Root = newroot
 		} else {
 			newroot, err := gostor.Write(f.Root, fi.Length, f.Length, 0, nil, gostor.BTData)
-			if err!=nil {
+			if err != nil {
 				return err
 			}
 
@@ -216,26 +216,26 @@ func (f *File) Wstat(fi *FileInfo) os.Error {
 	f.dir.wlock.Lock()
 	if fi.Name != f.Name {
 		newdir, err = RenameEntry(f.dir.Root, fi)
-		if err==nil {
-			f.dir.children[f.Name] = nil, false
+		if err == nil {
+			delete(f.dir.children, f.Name)
 			f.dir.children[fi.Name] = f
 		}
 	} else {
 		newdir, err = ModifyEntry(f.dir.Root, fi)
 	}
 
-	if err==nil {
+	if err == nil {
 		gostor.Forget(f.dir.Root)
 		f.dir.Root = newdir
 	}
 	f.dir.wlock.Unlock()
 
-	if err!=nil {
+	if err != nil {
 		return err
 	}
 
 	err = f.dir.update()
-	if err!=nil {
+	if err != nil {
 		return err
 	}
 
@@ -246,7 +246,7 @@ func (f *File) Wstat(fi *FileInfo) os.Error {
 }
 
 // updates the file entry up to the super
-func (f *File) update() os.Error {
+func (f *File) update() error {
 	for d := f.dir; d != nil; f, d = d, d.dir {
 		d.wlock.Lock()
 		fmt.Printf("File %s new root %d\n", f.Name, f.Root)

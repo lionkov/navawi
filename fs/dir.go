@@ -2,24 +2,26 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
-	"os"
-	"gostor"
 	"go9p.googlecode.com/hg/p"
+	"gostor"
+	"io"
+	"os"
 )
 
 const (
 	DirEntrySize = 70
-	BTDirEntry = 0x1234
-	BTSuper = 0x5678
+	BTDirEntry   = 0x1234
+	BTSuper      = 0x5678
 )
 
 type FileInfo struct {
 	p.Dir
 
-	Root		uint64	// id of the file
-	entryOffset	uint64	// offset in the parent file
-	entrySize	uint64	// size of the entry
+	Root        uint64 // id of the file
+	entryOffset uint64 // offset in the parent file
+	entrySize   uint64 // size of the entry
 }
 
 // Directory Entry Layout
@@ -39,35 +41,35 @@ type FileInfo struct {
 //	Muidnum[4]
 //	Root[8]
 
-var startMarker = []byte { 0xFF }
+var startMarker = []byte{0xFF}
 
 // read forward starting from the specified offset until we reach the start marker
 // of the next entry
-func readUntilStart(dir, offset uint64, buf []byte) ([]byte, os.Error) {
+func readUntilStart(dir, offset uint64, buf []byte) ([]byte, error) {
 	var pos int
 
 	for {
-		if buf==nil {
+		if buf == nil {
 			buf = make([]byte, DirEntrySize*2)
 			pos = 0
 		} else {
-			tbuf := make([]byte, len(buf) + DirEntrySize*2)
+			tbuf := make([]byte, len(buf)+DirEntrySize*2)
 			pos = copy(tbuf, buf)
 			buf = tbuf
 		}
 
 		n, err := gostor.Read(dir, offset+uint64(pos), buf[pos:])
-		if err!=nil {
+		if err != nil {
 			return nil, err
 		}
 
-		if n==0 {
-			return nil, os.EOF
+		if n == 0 {
+			return nil, io.EOF
 		}
 
-		buf = buf[0:pos+n]
+		buf = buf[0 : pos+n]
 		if m := bytes.Index(buf[pos:], startMarker); m >= 0 {
-			return buf[0:m+4], nil
+			return buf[0 : m+4], nil
 		}
 	}
 
@@ -75,32 +77,32 @@ func readUntilStart(dir, offset uint64, buf []byte) ([]byte, os.Error) {
 	return nil, nil
 }
 
-func readBackUntilStart(dir, offset uint64, buf []byte) (uint64, []byte, os.Error) {
+func readBackUntilStart(dir, offset uint64, buf []byte) (uint64, []byte, error) {
 	for {
-		size := DirEntrySize*2
+		size := DirEntrySize * 2
 		if offset-uint64(size) < 0 {
 			size = int(offset)
 		}
 
-		if buf==nil {
+		if buf == nil {
 			buf = make([]byte, size)
 		} else {
-			tbuf := make([]byte, len(buf) + size)
+			tbuf := make([]byte, len(buf)+size)
 			copy(tbuf[size:], buf)
 		}
 
-		n, err := gostor.Read(dir, offset - uint64(size), buf[0:size])
-		if err!=nil {
+		n, err := gostor.Read(dir, offset-uint64(size), buf[0:size])
+		if err != nil {
 			return 0, nil, err
 		}
 
-		if n!=size {
-			return 0, nil, os.NewError("short read")
+		if n != size {
+			return 0, nil, errors.New("short read")
 		}
 
 		offset -= uint64(size)
 		if m := bytes.LastIndex(buf[0:size], startMarker); m >= 0 {
-			return offset+uint64(m), buf[m:], nil
+			return offset + uint64(m), buf[m:], nil
 		}
 	}
 
@@ -111,31 +113,31 @@ func readBackUntilStart(dir, offset uint64, buf []byte) (uint64, []byte, os.Erro
 // Find DirEntry at the specified offset. The offset doesn't need to point to
 // the beginning of the entry, the function will find and return the offset
 // of the beginning, as well as the content of the entry.
-func findEntry(dir, offset uint64) (uint64, []byte, os.Error) {
+func findEntry(dir, offset uint64) (uint64, []byte, error) {
 	var pos int
 	var buf []byte
 
-//	fmt.Printf("findEntry offset %d\n", offset)
+	//	fmt.Printf("findEntry offset %d\n", offset)
 	// read forward until we find 0xFF
 	for {
-		if buf==nil {
+		if buf == nil {
 			buf = make([]byte, DirEntrySize*2)
 			pos = 0
 		} else {
-			tbuf := make([]byte, len(buf) + DirEntrySize*2)
+			tbuf := make([]byte, len(buf)+DirEntrySize*2)
 			pos = copy(tbuf, buf)
 			buf = tbuf
 		}
 
 		n, err := gostor.Read(dir, offset+uint64(pos), buf[pos:])
-		if err!=nil {
+		if err != nil {
 			return 0, nil, err
 		}
 
-		buf = buf[0:pos+n]
-		if n==0 {
+		buf = buf[0 : pos+n]
+		if n == 0 {
 			break
-//			return 0, nil, os.EOF
+			//			return 0, nil, os.EOF
 		}
 
 		if m := bytes.IndexByte(buf[pos:], 0xFF); m >= 0 {
@@ -144,28 +146,28 @@ func findEntry(dir, offset uint64) (uint64, []byte, os.Error) {
 		}
 	}
 
-//	fmt.Printf("findEntry: read forward %d bytes\n", len(buf))
+	//	fmt.Printf("findEntry: read forward %d bytes\n", len(buf))
 	// read backward until we find 0xFF
 L:
 	for {
-		size := DirEntrySize*2
+		size := DirEntrySize * 2
 		if int64(offset)-int64(size) < 0 {
 			size = int(offset)
 		}
 
-		tbuf := make([]byte, len(buf) + size)
+		tbuf := make([]byte, len(buf)+size)
 		copy(tbuf[size:], buf)
 		buf = tbuf
-		n, err := gostor.Read(dir, offset - uint64(size), buf[0:size])
-		if err!=nil {
+		n, err := gostor.Read(dir, offset-uint64(size), buf[0:size])
+		if err != nil {
 			return 0, nil, err
 		}
 
-		if n!=size {
-			return 0, nil, os.NewError("short read")
+		if n != size {
+			return 0, nil, errors.New("short read")
 		}
 
-		for i:=size-1; i>=0; i-- {
+		for i := size - 1; i >= 0; i-- {
 			offset--
 			if buf[i] == 0xFF {
 				buf = buf[i:]
@@ -174,7 +176,7 @@ L:
 		}
 	}
 
-//	fmt.Printf("findEntry: read backward to offset %d len %d\n", offset, len(buf))
+	//	fmt.Printf("findEntry: read backward to offset %d len %d\n", offset, len(buf))
 	return offset, buf, nil
 }
 
@@ -184,20 +186,20 @@ L:
 func encodeEntry(data []byte) {
 	bits := 0
 	nbits := 0
-	for i:=len(data) - 1; i > 3; i-- {
+	for i := len(data) - 1; i > 3; i-- {
 		switch data[i] {
 		case 0xFF:
 			data[i] = 0xFE
-			bits = (bits<<1) | 1
+			bits = (bits << 1) | 1
 			nbits++
 
 		case 0xFE:
-			bits = bits<<1
+			bits = bits << 1
 			nbits++
 		}
 	}
 
-	if nbits>24 {
+	if nbits > 24 {
 		fmt.Printf("too many 0xFx bytes while encoding\n")
 	}
 
@@ -213,27 +215,27 @@ func encodeEntry(data []byte) {
 func decodeEntry(data []byte) {
 	fmt.Printf("decodeEntry len %d\n", len(data))
 	bits := uint32(data[1]) | (uint32(data[2]) << 8) | (uint32(data[3]) << 16)
-	for i:=0; i < len(data); i++ {
+	for i := 0; i < len(data); i++ {
 		if data[i] == 0xFE {
 			if bits&1 == 1 {
 				data[i] = 0xFF
 			}
 
-			bits = bits>>1
+			bits = bits >> 1
 		}
 	}
 }
 
 func entryName(data []byte) string {
 	sz, _ := gint16(data[33:])
-	return string(data[35:35+sz])
+	return string(data[35 : 35+sz])
 }
 
 // Does binary search in the directory file, looking for the specified name
 // If found, returns the offset of the entry as well as the content
 // If not found, returns the offset where the entry with that name should be
 // inserted and nil as entry content.
-func bsearchEntry(dir uint64, name string) (uint64, []byte, os.Error) {
+func bsearchEntry(dir uint64, name string) (uint64, []byte, error) {
 	var b, t, n uint64
 	var offset uint64
 	var entry []byte
@@ -241,20 +243,20 @@ func bsearchEntry(dir uint64, name string) (uint64, []byte, os.Error) {
 	n = 0
 	b = 0
 	t, err := gostor.Size(dir)
-	if err!=nil {
+	if err != nil {
 		return 0, nil, err
 	}
 
 	for b < t {
 		n = (b + t) / 2
 		offset, entry, err = findEntry(dir, n)
-		if err!=nil {
+		if err != nil {
 			return 0, nil, err
 		}
 
 		decodeEntry(entry)
 		ename := entryName(entry)
-		if ename==name {
+		if ename == name {
 			return offset, entry, nil
 		} else if ename < name {
 			b = offset + uint64(len(entry))
@@ -279,20 +281,20 @@ func sizeFileInfo(fi *FileInfo) uint32 {
 	gid := []byte(fi.Gid)
 	muid := []byte(fi.Muid)
 	ext := []byte(fi.Ext)
-	sz := 4 + 		// marker + Fxbits
-		13 +		// Qid[13]
-		4 + 		// Mode[4]
-		4 +		// Mtime[4]
-		8 + 		// Length[8]
-		2 + len(name) +	// Name[n]
-		2 + len(uid) +	// Uid[n]
-		2 + len(gid) + 	// Gid[n]
-		2 + len(muid) +	// Muid[n]
-		2 + len(ext) +	// Ext[n]
-		4 + 		// Uidnum[4]
-		4 + 		// Gidnum[4]
-		4 + 		// Muidnum[4]
-		8		// Root[8]
+	sz := 4 + // marker + Fxbits
+		13 + // Qid[13]
+		4 + // Mode[4]
+		4 + // Mtime[4]
+		8 + // Length[8]
+		2 + len(name) + // Name[n]
+		2 + len(uid) + // Uid[n]
+		2 + len(gid) + // Gid[n]
+		2 + len(muid) + // Muid[n]
+		2 + len(ext) + // Ext[n]
+		4 + // Uidnum[4]
+		4 + // Gidnum[4]
+		4 + // Muidnum[4]
+		8 // Root[8]
 
 	return uint32(sz)
 }
@@ -305,7 +307,7 @@ func encodeFileInfo(fi *FileInfo, buf []byte) ([]byte, int) {
 	muid := []byte(fi.Muid)
 	ext := []byte(fi.Ext)
 
-	if buf==nil {
+	if buf == nil {
 		buf = make([]byte, sz)
 	}
 
@@ -333,7 +335,7 @@ func gstr(buf []byte) (string, []byte) {
 	n, p := gint16(buf)
 	return string(p[0:n]), p[n:]
 }
-	
+
 func decodeFileInfo(entry []byte, fi *FileInfo) []byte {
 	var p []byte
 
@@ -356,13 +358,13 @@ func decodeFileInfo(entry []byte, fi *FileInfo) []byte {
 	return p
 }
 
-func CreateEntry(dir uint64, fi *FileInfo) (newdir uint64, err os.Error) {
+func CreateEntry(dir uint64, fi *FileInfo) (newdir uint64, err error) {
 	offset, data, err := bsearchEntry(dir, fi.Name)
 	if err != nil {
 		return 0, err
 	}
 
-	if data!=nil {
+	if data != nil {
 		return 0, os.EEXIST
 	}
 
@@ -373,32 +375,32 @@ func CreateEntry(dir uint64, fi *FileInfo) (newdir uint64, err os.Error) {
 	return dir, err
 }
 
-func RemoveEntry(dir uint64, fi *FileInfo) (newdir uint64, err os.Error) {
-	return gostor.Write(dir, fi.entryOffset, fi.entryOffset + fi.entrySize, 0, nil, 0)
+func RemoveEntry(dir uint64, fi *FileInfo) (newdir uint64, err error) {
+	return gostor.Write(dir, fi.entryOffset, fi.entryOffset+fi.entrySize, 0, nil, 0)
 }
 
 // uses fi.entryOffset and fi.entrySize to decide which entry to modify
 // returns the new size in fi.entrySize
-func ModifyEntry(dir uint64, fi *FileInfo) (newdir uint64, err os.Error) {
+func ModifyEntry(dir uint64, fi *FileInfo) (newdir uint64, err error) {
 	newentry, _ := encodeFileInfo(fi, nil)
-	dir, err = gostor.Write(dir, fi.entryOffset, fi.entryOffset + fi.entrySize, len(newentry), newentry, BTDirEntry)
+	dir, err = gostor.Write(dir, fi.entryOffset, fi.entryOffset+fi.entrySize, len(newentry), newentry, BTDirEntry)
 	fi.entrySize = uint64(len(newentry))
 	return dir, err
 }
 
-func RenameEntry(dir uint64, fi *FileInfo) (newdir uint64, err os.Error) {
+func RenameEntry(dir uint64, fi *FileInfo) (newdir uint64, err error) {
 	offset, entry, err := bsearchEntry(dir, fi.Name)
-	if err!=nil {
+	if err != nil {
 		return 0, err
 	}
 
-	if entry!=nil {
+	if entry != nil {
 		return 0, os.EEXIST
 	}
 
 	// remove the entry from the old offset
-	newdir, err = gostor.Write(dir, fi.entryOffset, fi.entryOffset + fi.entrySize, 0, nil, 0)
-	if err!= nil {
+	newdir, err = gostor.Write(dir, fi.entryOffset, fi.entryOffset+fi.entrySize, 0, nil, 0)
+	if err != nil {
 		return 0, err
 	}
 
@@ -408,13 +410,13 @@ func RenameEntry(dir uint64, fi *FileInfo) (newdir uint64, err os.Error) {
 	return newdir, err
 }
 
-func FindEntry(dir uint64, name string) (fi *FileInfo, err os.Error) {
+func FindEntry(dir uint64, name string) (fi *FileInfo, err error) {
 	offset, entry, err := bsearchEntry(dir, name)
 	if err != nil {
 		return nil, err
 	}
 
-	if entry==nil {
+	if entry == nil {
 		return nil, os.ENOENT
 	}
 
@@ -422,12 +424,13 @@ func FindEntry(dir uint64, name string) (fi *FileInfo, err os.Error) {
 	decodeFileInfo(entry, fi)
 	fi.entryOffset = offset
 	fi.entrySize = uint64(len(entry))
-//	fmt.Printf("FindEntry: root %d\n", fi.Root)
+	//	fmt.Printf("FindEntry: root %d\n", fi.Root)
 
 	return fi, nil
 }
 
 type btDirEntry int
+
 var btdirentry btDirEntry
 
 func (btDirEntry) Id() uint16 {
@@ -450,16 +453,16 @@ func (btDirEntry) Files(data []byte) []uint64 {
 			n++
 		}
 
-//		fmt.Printf("btDirEntry.Files: n %d remaining data: %v\n", n, data)
+		//		fmt.Printf("btDirEntry.Files: n %d remaining data: %v\n", n, data)
 		entry := data[0:n]
 		decodeEntry(entry)
-		id, _ := gint64(entry[len(entry) - 8:])
+		id, _ := gint64(entry[len(entry)-8:])
 		encodeEntry(entry)
 		bs = append(bs, id)
 		data = data[n:]
 	}
 
-//	fmt.Printf("btDirEntry.Files: %v\n", bs)
+	//	fmt.Printf("btDirEntry.Files: %v\n", bs)
 	return bs
 }
 
@@ -478,15 +481,15 @@ func (btDirEntry) Commit(data []byte) bool {
 
 		entry := data[0:n]
 		decodeEntry(entry)
-		id, _ := gint64(entry[len(entry) - 8:])
+		id, _ := gint64(entry[len(entry)-8:])
 		newid, err := gostor.Id(id)
-		if err!=nil {
+		if err != nil {
 			fmt.Printf("btDirEntry.Commit: Error %v\n", err)
 			return false
 		}
 
-//		fmt.Printf("btDirEntry.Commit: %d -> %d\n", id, newid)
-		pint64(newid, entry[len(entry) - 8:])
+		//		fmt.Printf("btDirEntry.Commit: %d -> %d\n", id, newid)
+		pint64(newid, entry[len(entry)-8:])
 		encodeEntry(entry)
 		data = data[n:]
 	}

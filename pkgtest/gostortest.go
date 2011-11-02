@@ -1,8 +1,8 @@
 package gostortest
 
 import (
+	"errors"
 //	"fmt"
-	"os"
 )
 
 var nextid uint64
@@ -13,10 +13,10 @@ func Init() {
 	files[0] = make([]byte, 0)
 }
 
-func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint64, os.Error) {
+func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint64, error) {
 	f := files[root]
 	if f==nil {
-		return 0, os.NewError("invalid root")
+		return 0, errors.New("invalid root")
 	}
 
 	sz := start + uint64(count)
@@ -47,10 +47,10 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	return id, nil
 }
 
-func Read(root, offset uint64, data []byte) (int, os.Error) {
+func Read(root, offset uint64, data []byte) (int, error) {
 	f := files[root]
 	if f==nil {
-		return 0, os.NewError("invalid root")
+		return 0, errors.New("invalid root")
 	}
 
 	if offset >= uint64(len(f)) {
@@ -60,7 +60,7 @@ func Read(root, offset uint64, data []byte) (int, os.Error) {
 	return copy(data, f[offset:]), nil
 }
 
-func Forget(root uint64) os.Error {
+func Forget(root uint64) error {
 	files[root] = nil
 	return nil
 }

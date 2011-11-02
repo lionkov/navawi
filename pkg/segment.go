@@ -1,6 +1,7 @@
 package gostor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"hash/crc32"
@@ -57,7 +58,7 @@ type SegmentManager struct {
 	trailer	[]byte
 }
 
-func NewSegmentManager(dc *DiskCache, disk *os.File) (*SegmentManager, os.Error) {
+func NewSegmentManager(dc *DiskCache, disk *os.File) (*SegmentManager, error) {
 	sm := new(SegmentManager)
 	sm.dc = dc
 	sm.disk = disk
@@ -76,7 +77,7 @@ func NewSegmentManager(dc *DiskCache, disk *os.File) (*SegmentManager, os.Error)
 	return sm, nil
 }
 
-func FindActiveSegment(dc *DiskCache) (offset uint64, err os.Error) {
+func FindActiveSegment(dc *DiskCache) (offset uint64, err error) {
 	offset = 0
 	for {
 		var hdr, tr, p []byte
@@ -92,7 +93,7 @@ func FindActiveSegment(dc *DiskCache) (offset uint64, err os.Error) {
 
 		hmagic, p = gint32(hdr)
 		if hmagic != SGHMagic {
-			return 0, StrError(fmt.Sprintf("not a segment: header %x expected %x", hmagic, SGHMagic))
+			return 0, errors.New(fmt.Sprintf("not a segment: header %x expected %x", hmagic, SGHMagic))
 		}
 
 		size, p = gint32(p)
@@ -114,7 +115,7 @@ func FindActiveSegment(dc *DiskCache) (offset uint64, err os.Error) {
 
 		offset = next
 		if offset == ^uint64(0) {
-			return 0, StrError("no active segment")
+			return 0, errors.New("no active segment")
 		}
 	}
 
@@ -122,7 +123,7 @@ func FindActiveSegment(dc *DiskCache) (offset uint64, err os.Error) {
 	return offset, nil		
 }
 
-func FormatSegment(disk *os.File, offset uint64, size uint32, prev, next uint64) os.Error {
+func FormatSegment(disk *os.File, offset uint64, size uint32, prev, next uint64) error {
 	b := make([]byte, SGHeaderSize + SGTrailerSize)
 
 	// segment header
@@ -147,7 +148,7 @@ func FormatSegment(disk *os.File, offset uint64, size uint32, prev, next uint64)
 	return err
 }
 
-func FormatDisk(disk *os.File, disksz uint64, segsz uint32) os.Error {
+func FormatDisk(disk *os.File, disksz uint64, segsz uint32) error {
 	var prev, offset uint64
 
 	segnum := 0
@@ -170,7 +171,7 @@ func FormatDisk(disk *os.File, disksz uint64, segsz uint32) os.Error {
 	return nil
 }
 
-func ReadSegment(dc *DiskCache, offset uint64) (*Segment, os.Error) {
+func ReadSegment(dc *DiskCache, offset uint64) (*Segment, error) {
 //	fmt.Printf("ReadSegment offset %v\n", offset)
 	b, err := dc.Read(offset, SGHeaderSize + FGHeaderSize)
 	if err!=nil {
@@ -181,7 +182,7 @@ func ReadSegment(dc *DiskCache, offset uint64) (*Segment, os.Error) {
 	s.offset = offset
 	m, p := gint32(b)
 	if m!=SGHMagic {
-		return nil, StrError(fmt.Sprintf("not a segment: header %x expected %x", m, SGHMagic))
+		return nil, errors.New(fmt.Sprintf("not a segment: header %x expected %x", m, SGHMagic))
 	}
 
 	s.size, p = gint32(p)
@@ -195,7 +196,7 @@ L:
 		m, p = gint32(p)
 		switch m {
 		default:
-			return nil, StrError(fmt.Sprintf("not a fragment: %x", m))
+			return nil, errors.New(fmt.Sprintf("not a fragment: %x", m))
 		case SGSealed, SGUnsealed:
 			break L
 		case FGMagic:
@@ -210,7 +211,7 @@ L:
 }
 
 // TODO: Fix
-func (s *Segment) Check(disk *os.File) os.Error {
+func (s *Segment) Check(disk *os.File) error {
 	b := make([]byte, int64(s.size - SGHeaderSize))
 	_, err := disk.ReadAt(b, int64(s.offset + SGHeaderSize))
 	if err!=nil {
@@ -223,7 +224,7 @@ func (s *Segment) Check(disk *os.File) os.Error {
 
 		m, p := gint32(b)
 		if m!=FGMagic {
-			return StrError("invalid fragment magic")
+			return errors.New("invalid fragment magic")
 		}
 
 		sz, p = gint32(p)
@@ -235,7 +236,7 @@ func (s *Segment) Check(disk *os.File) os.Error {
 		csum, _ := gint32(p)
 		_ = pint32(0, p)
 		if csum != crc32.ChecksumIEEE(b[0:sz]) {
-			return StrError("invalid checksum")
+			return errors.New("invalid checksum")
 		}
 
 		b = b[sz:]
@@ -252,7 +253,7 @@ func (s *Segment) isFull() bool {
 	return s.freeSpace() == 0
 }
 
-func (sm *SegmentManager) AllocFragment(minsz, datasz uint32) (*Fragment, os.Error) {
+func (sm *SegmentManager) AllocFragment(minsz, datasz uint32) (*Fragment, error) {
 //	fmt.Printf("SegmentManager.AllocFragment minsz %d datasz %d\n", minsz, datasz)
 	// add the space for the header
 	minsz += FGHeaderSize
@@ -264,7 +265,7 @@ again:
 	s := sm.seg
 	if s.frag!=nil {
 		sm.Unlock()
-		return nil, StrError("trying to allocate segment before the previous one is committed")
+		return nil, errors.New("trying to allocate segment before the previous one is committed")
 	}
 
 	free := s.freeSpace()
@@ -297,7 +298,7 @@ again:
 }
 
 // called with sm locked
-func (sm *SegmentManager) nextSegment() os.Error {
+func (sm *SegmentManager) nextSegment() error {
 	var tr [SGTrailerSize]byte
 
 	trailer := tr[0:]
@@ -317,19 +318,19 @@ func (sm *SegmentManager) nextSegment() os.Error {
 
 	sm.seg = nil
 	if s.next == ^uint64(0) {
-		return StrError("storage full")
+		return errors.New("storage full")
 	}
 
 	sm.seg, err = ReadSegment(sm.dc, s.next)
 	return err
 }
 
-func (sm *SegmentManager) CommitFragment(frag *Fragment, datasz uint32) os.Error {
-	var err os.Error
+func (sm *SegmentManager) CommitFragment(frag *Fragment, datasz uint32) error {
+	var err error
 
 	datasz += FGHeaderSize
 	if datasz > frag.size {
-		return StrError(fmt.Sprintf("data size exceeds initial allocation allocated %d requested %d", frag.size, datasz))
+		return errors.New(fmt.Sprintf("data size exceeds initial allocation allocated %d requested %d", frag.size, datasz))
 	}
 
 //	fmt.Printf("SegmentManager.CommitFragment: %v\n", frag.raw[0:datasz])
@@ -354,11 +355,11 @@ func (sm *SegmentManager) CommitFragment(frag *Fragment, datasz uint32) os.Error
 	return err
 }
 
-func fragmentFindBlock(btype uint16, buf []byte, offset uint64) (root uint64, err os.Error) {
+func fragmentFindBlock(btype uint16, buf []byte, offset uint64) (root uint64, err error) {
 	for len(buf) >= BTHeaderSize {
 		m, _ := gint32(buf)
 		if m!=BTMagic {
-			err = os.NewError(fmt.Sprintf("invalid block magic at offset %d expected %x got %x", offset, BTMagic, m))
+			err = errors.New(fmt.Sprintf("invalid block magic at offset %d expected %x got %x", offset, BTMagic, m))
 			return
 		}
 
@@ -385,7 +386,7 @@ func fragmentFindBlock(btype uint16, buf []byte, offset uint64) (root uint64, er
 	return
 }
 
-func (s *Segment) findBlock(btype uint16) (root uint64, err os.Error) {
+func (s *Segment) findBlock(btype uint16) (root uint64, err error) {
 	var buf []byte
 	var fr uint64
 
@@ -402,7 +403,7 @@ func (s *Segment) findBlock(btype uint16) (root uint64, err os.Error) {
 		}
 
 		if m!=FGMagic {
-			return 0, os.NewError(fmt.Sprintf("invalid fragment magic at offset %d expected %x got %x", offset, FGMagic, m))
+			return 0, errors.New(fmt.Sprintf("invalid fragment magic at offset %d expected %x got %x", offset, FGMagic, m))
 		}
 
 		sz, _ := gint32(buf[4:])
@@ -435,7 +436,7 @@ func (s *Segment) findBlock(btype uint16) (root uint64, err os.Error) {
 	return
 }
 
-func (sm *SegmentManager) FindBlock(btype uint16) (root uint64, err os.Error) {
+func (sm *SegmentManager) FindBlock(btype uint16) (root uint64, err error) {
 	s := sm.seg
 	for s != nil {
 		root, err = s.findBlock(btype)
@@ -444,7 +445,7 @@ func (sm *SegmentManager) FindBlock(btype uint16) (root uint64, err os.Error) {
 		}
 
 		if s.prev == ^uint64(0) {
-			err = StrError("block not found")
+			err = errors.New("block not found")
 			break
 		}
 

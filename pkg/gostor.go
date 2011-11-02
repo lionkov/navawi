@@ -1,6 +1,7 @@
 package gostor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
@@ -28,8 +29,8 @@ var Conf = conf {
 	Bcachesz:	16*1024,
 }
 
-func Init(diskname string) os.Error {
-	var err os.Error
+func Init(diskname string) error {
+	var err error
 	var d *os.File
 
 	d, err = os.OpenFile(diskname, os.O_RDWR, 0666)
@@ -55,7 +56,7 @@ func Init(diskname string) os.Error {
 }
 
 // Return the up-to-date ID for the specified root
-func Id(root uint64) (uint64, os.Error) {
+func Id(root uint64) (uint64, error) {
 	b, err := bc.Get(root)
 	if err!=nil {
 		return 0, err
@@ -66,7 +67,7 @@ func Id(root uint64) (uint64, os.Error) {
 
 // Commit the specified root to disk. The file needs to be
 // still "live"
-func Sync(root uint64) os.Error {
+func Sync(root uint64) error {
 //	fmt.Printf("Sync %v\n", root)
 	if root%2==0 && root!=0 {
 		return nil
@@ -79,7 +80,7 @@ func Sync(root uint64) os.Error {
 
 //	fmt.Printf("blk %p type %x\n", b, b.blktype)
 	if !b.IsRoot() {
-		return os.NewError("not root")
+		return errors.New("not root")
 	}
 
 	bc.Commit(b)
@@ -89,7 +90,7 @@ func Sync(root uint64) os.Error {
 
 // Forget the file with ID root. If the file is not referenced by other files
 // it will be garbage collected (eventually)
-func Forget(root uint64) os.Error {
+func Forget(root uint64) error {
 	fmt.Printf("Forget %d\n", root)
 	b, err := bc.Get(root)
 	if err!=nil {
@@ -97,7 +98,7 @@ func Forget(root uint64) os.Error {
 	}
 
 	if !b.IsRoot() {
-		return os.NewError("not root")
+		return errors.New("not root")
 	}
 
 	bc.RemoveLiveBlock(b)
@@ -107,7 +108,7 @@ func Forget(root uint64) os.Error {
 // Find the latest file that contains data of the specified type
 // Current implementation allows only short files (with root block at
 // level 0) to be found
-func Find(btype uint16) (uint64, os.Error) {
+func Find(btype uint16) (uint64, error) {
 
 	btype |= BTRoot
 	root := uint64(0)
@@ -130,7 +131,7 @@ func Find(btype uint16) (uint64, os.Error) {
 	return sm.FindBlock(btype)
 }
 
-func Size(root uint64) (uint64, os.Error) {
+func Size(root uint64) (uint64, error) {
 	b, err := bc.Get(root)
 	if err!= nil {
 		return 0, err

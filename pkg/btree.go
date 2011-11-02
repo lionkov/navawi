@@ -1,8 +1,8 @@
 package gostor
 
 import (
+	"errors"
 	"fmt"
-	"os"
 )
 
 const (
@@ -46,7 +46,7 @@ func search(base uint64, offset uint64, data []byte) (pos int, start, end uint64
 	return
 }
 
-func find(root uint64, offset uint64) (bp *BTPath, err os.Error) {
+func find(root uint64, offset uint64) (bp *BTPath, err error) {
 	var b *Block
 	var pos int
 	var end uint64
@@ -65,7 +65,7 @@ func find(root uint64, offset uint64) (bp *BTPath, err os.Error) {
 	}
 
 	if !b.IsRoot() {
-		return nil, os.NewError("not root")
+		return nil, errors.New("not root")
 	}
 
 //	fmt.Printf("Root level %d\n", b.Level())
@@ -130,7 +130,7 @@ func find(root uint64, offset uint64) (bp *BTPath, err os.Error) {
 
 // Moves the specified BTPath to the next block on the specified level, returns false if end of file
 // After the call, entries below the specified level are not up-to-date
-func (bp *BTPath) next(level int) (bool, os.Error) {
+func (bp *BTPath) next(level int) (bool, error) {
 	var l int
 
 	for l = level + 1; l < bp.levels; l++ {
@@ -187,7 +187,7 @@ func (bp *BTPath) next(level int) (bool, os.Error) {
 
 // Size of the next data block, 0 if hole or the end of the file
 // Doesn't change the specified BTPath
-func (bp *BTPath) nextSize(level int, hole bool) (int, bool, os.Error) {
+func (bp *BTPath) nextSize(level int, hole bool) (int, bool, error) {
 	var l int
 
 	for l = level + 1; l < bp.levels; l++ {
@@ -240,7 +240,7 @@ func (bp *BTPath) nextSize(level int, hole bool) (int, bool, os.Error) {
 
 // Moves the specified BTPath to the previous data block, returns false if beginning of file.
 // Entries below the specified level are not up-to-date after the call
-func (bp *BTPath) prev(level int) (bool, os.Error) {
+func (bp *BTPath) prev(level int) (bool, error) {
 	var l int
 
 	// find the first useful entry
@@ -297,7 +297,7 @@ func (bp *BTPath) prev(level int) (bool, os.Error) {
 
 // Size of the previous data block. 0 if hole or beginning of file
 // Doesn't change the specified BTPath
-func (bp *BTPath) prevSize(level int, hole bool) (int, bool, os.Error) {
+func (bp *BTPath) prevSize(level int, hole bool) (int, bool, error) {
 	var l int
 
 	// find the first useful entry
@@ -360,7 +360,7 @@ func (bp *BTPath) clone() *BTPath {
 	return nbp
 }
 
-func (bp *BTPath) seek(offset uint64) os.Error {
+func (bp *BTPath) seek(offset uint64) error {
 	var l int
 	var end uint64
 
@@ -426,7 +426,7 @@ func (bp *BTPath) seek(offset uint64) os.Error {
 		if pos < e.entnum {
 			blk, _ := gint64(b.Data[pos*BTEntrySize:])
 			if blk!=0 {
-				var err os.Error
+				var err error
 
 				b, err = bc.Get(blk)
 				if err!=nil {
@@ -531,7 +531,7 @@ func copyToBlocks(ds [][]byte, datasz int, ctype uint16, maxblksz int) []*Block 
 // 4) rewrite 100 bytes at offset 1000
 //	write(, 1000, 1100, 100, data)	// len(data) == 100
 //
-func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint64, os.Error) {
+func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint64, error) {
 	var l int
 	var rootblk *Block
 
@@ -716,7 +716,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 	// now store all the blocks...
 	if rootblk == nil {
-		return 0, os.NewError("file is too big")
+		return 0, errors.New("file is too big")
 	}
 
 	rootblk.SetRoot(true)
@@ -726,7 +726,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	return rootblk.Offset, nil
 }
 
-func Read(root, offset uint64, data []byte) (int, os.Error) {
+func Read(root, offset uint64, data []byte) (int, error) {
 	fmt.Printf("Read root %v offset %v count %v\n", root, offset, len(data))
 	bp, err := find(root, offset)
 	if err!=nil {

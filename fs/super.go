@@ -2,24 +2,24 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"go9p.googlecode.com/hg/p"
+	"gostor"
 	"sync"
 	"sync/atomic"
 	"time"
-	"gostor"
-	"go9p.googlecode.com/hg/p"
 )
 
 type Super struct {
 	// block layout: rootentry 0xFF nextpath[8]
 	sync.Mutex
-	id		uint64	// id of the super file
-	root		*File
-	nextpath	uint64
-	blocksz		uint64
+	id       uint64 // id of the super file
+	root     *File
+	nextpath uint64
+	blocksz  uint64
 }
 
 type btSuper int
+
 var btsuper btSuper
 var super Super
 
@@ -27,16 +27,16 @@ func NextPath() uint64 {
 	return atomic.AddUint64(&super.nextpath, 1)
 }
 
-func ReadSuper() os.Error {
-	var err os.Error
+func ReadSuper() error {
+	var err error
 
-	super.id, err = gostor.Find(BTSuper|gostor.BTRoot)
-	if err!=nil {
+	super.id, err = gostor.Find(BTSuper | gostor.BTRoot)
+	if err != nil {
 		return err
 	}
 
 	super.blocksz, err = gostor.Size(super.id)
-	if err!=nil {
+	if err != nil {
 		return err
 	}
 
@@ -56,17 +56,17 @@ func ReadSuper() os.Error {
 	return nil
 }
 
-func UpdateSuper() os.Error {
+func UpdateSuper() error {
 	super.Lock()
 
 	// need to make this more efficient...
 	sz := sizeFileInfo(&super.root.FileInfo)
-	data := make([]byte, sz + 8)
+	data := make([]byte, sz+8)
 	encodeFileInfo(&super.root.FileInfo, data)
 	pint64(super.nextpath, data[sz:])
-//	fmt.Printf("UpdateSuper: root %d %v\n", super.root.Root, data)
+	//	fmt.Printf("UpdateSuper: root %d %v\n", super.root.Root, data)
 	id, err := gostor.Write(super.id, 0, super.blocksz, len(data), data, BTSuper)
-	if err!=nil {
+	if err != nil {
 		super.Unlock()
 		return nil
 	}
@@ -79,7 +79,7 @@ func UpdateSuper() os.Error {
 	return nil
 }
 
-func CreateSuper() os.Error {
+func CreateSuper() error {
 	super.id = 0
 	super.blocksz = 0
 	super.nextpath = 1
@@ -94,13 +94,13 @@ func CreateSuper() os.Error {
 	root.Gid = fs.group.Name()
 	root.Gidnum = uint32(fs.group.Id())
 	root.Name = ""
-//	root.Ctime = time.Seconds()
+	//	root.Ctime = time.Seconds()
 	root.Mtime = uint32(time.Seconds())
 	root.Root = 0
 	root.Ref()
 	fmt.Printf("Root file %p\n", root)
 	super.root = root
-	
+
 	return UpdateSuper()
 }
 
@@ -111,14 +111,14 @@ func (btSuper) Id() uint16 {
 // We write whole entries, so blocks should contain only whole entries
 func (btSuper) Files(data []byte) []uint64 {
 	bs := make([]uint64, 1)
-	bs[0], _ = gint64(data[len(data) - 16:])
+	bs[0], _ = gint64(data[len(data)-16:])
 
 	fmt.Printf("btSuper.Files id %d\n", bs[0])
 	return bs
 }
 
 func (btSuper) Commit(data []byte) bool {
-	id, _ := gint64(data[len(data) - 16:])
+	id, _ := gint64(data[len(data)-16:])
 	fmt.Printf("btSuper.Commit id %d\n", id)
 	newid, err := gostor.Id(id)
 	if err != nil {
@@ -126,6 +126,6 @@ func (btSuper) Commit(data []byte) bool {
 		return false
 	}
 
-	pint64(newid, data[len(data) - 16:])
+	pint64(newid, data[len(data)-16:])
 	return true
 }

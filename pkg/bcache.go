@@ -1,6 +1,7 @@
 package gostor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -62,7 +63,7 @@ type Block struct {
 
 type BlockCache struct {
 	sync.Mutex
-	err		os.Error
+	err		error
 	dc		*DiskCache
 	maxcount	uint32
 	maxucsize	uint32
@@ -87,13 +88,7 @@ type DataType interface {
 	Commit(data []byte) bool
 }
 
-type StrError string
-
-func (s StrError) String() string {
-	return string(s)
-}
-
-func NewBlockCache(dc *DiskCache, disk *os.File, maxcount uint32) (*BlockCache, os.Error) {
+func NewBlockCache(dc *DiskCache, disk *os.File, maxcount uint32) (*BlockCache, error) {
 	bc := new(BlockCache)
 	bc.dc = dc
 	bc.maxcount = maxcount
@@ -117,7 +112,7 @@ func NewBlockCache(dc *DiskCache, disk *os.File, maxcount uint32) (*BlockCache, 
 
 func (bc *BlockCache) commitproc() {
 	var c chan bool
-	var err os.Error
+	var err error
 
 	tick := time.Tick(MaxCommitTime)
 	for {
@@ -169,7 +164,7 @@ func RegisterDataType(bt DataType) bool {
 }
 
 // reads a block from the disk and parses the header
-func (bc *BlockCache) readBlock(offset uint64, b *Block) os.Error {
+func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
 	fmt.Printf("BlockCache.readBlock offset %d\n", offset)
 	b.Offset = offset
 	hdr, err := bc.dc.Read(offset, BTHeaderSize)
@@ -182,7 +177,7 @@ func (bc *BlockCache) readBlock(offset uint64, b *Block) os.Error {
 	if magic != BTMagic {
 		var str *string
 		*str = "boo"
-		return StrError("invalid block header")
+		return errors.New("invalid block header")
 	}
 
 	b.Length, p = gint16(p)
@@ -213,8 +208,8 @@ func (bc *BlockCache) makeSpace() {
 	}
 }
 
-func (bc *BlockCache) Get(offset uint64) (*Block, os.Error) {
-	var err os.Error
+func (bc *BlockCache) Get(offset uint64) (*Block, error) {
+	var err error
 
 	if offset==0 {
 		return bc.nullblk, nil
@@ -233,7 +228,7 @@ func (bc *BlockCache) Get(offset uint64) (*Block, os.Error) {
 		// 1. no reading from the disk
 		// 2. not in the lru list
 		if b==nil {
-			err = StrError(fmt.Sprintf("uncommitted block %d not found", offset))
+			err = errors.New(fmt.Sprintf("uncommitted block %d not found", offset))
 		}
 
 		bc.Unlock()
@@ -306,7 +301,7 @@ func (bc *BlockCache) Release(b *Block) {
 
 // if specified, blkref should return the same list that Blocks() call for the
 // block type
-func (bc *BlockCache) Store(b *Block, live bool, blkref []uint64) os.Error {
+func (bc *BlockCache) Store(b *Block, live bool, blkref []uint64) error {
 	p := pint32(BTMagic, b.raw)
 	p = pint16(b.Length, p)
 	p = pint16(b.blktype, p)
@@ -342,7 +337,7 @@ func (bc *BlockCache) Store(b *Block, live bool, blkref []uint64) os.Error {
 	return nil
 }
 
-func (bc *BlockCache) Commit(b *Block) os.Error {
+func (bc *BlockCache) Commit(b *Block) error {
 	c := make(chan bool)
 
 	for b==nil || b.Offset%2!=0 {
@@ -443,7 +438,7 @@ func (bc *BlockCache) mark(b *Block) {
 	}
 }
 
-func (bc *BlockCache) commit() os.Error {
+func (bc *BlockCache) commit() error {
 	var b *Block
 
 	bc.Lock()

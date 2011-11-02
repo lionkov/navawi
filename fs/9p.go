@@ -2,28 +2,28 @@ package main
 
 import (
 	"fmt"
+	"go9p.googlecode.com/hg/p"
+	"go9p.googlecode.com/hg/p/srv"
 	"log"
 	"os"
 	"syscall"
-	"go9p.googlecode.com/hg/p"
-	"go9p.googlecode.com/hg/p/srv"
 )
 
 type Fs struct {
 	srv.Srv
-	user	p.User
-	group	p.Group
+	user  p.User
+	group p.Group
 }
 
 type Fid struct {
-	file		*File
-	diroffset	uint64
+	file      *File
+	diroffset uint64
 }
 
-func toError(err os.Error) *p.Error {
+func toError(err error) *p.Error {
 	var ecode os.Errno
 
-	ename := err.String()
+	ename := err.Error()
 	if e, ok := err.(os.Errno); ok {
 		ecode = e
 	} else {
@@ -89,7 +89,7 @@ func (*Fs) Walk(req *srv.Req) {
 	f.Ref()
 	for ; i < len(tc.Wname); i++ {
 		fn, err := f.Find(tc.Wname[i])
-		if err!=nil {
+		if err != nil {
 			break
 		}
 
@@ -98,7 +98,7 @@ func (*Fs) Walk(req *srv.Req) {
 		wqids[i] = f.Qid
 	}
 
-	if len(tc.Wname) > 0 && i==0 {
+	if len(tc.Wname) > 0 && i == 0 {
 		f.Unref()
 		req.RespondError(Enoent)
 		return
@@ -123,7 +123,7 @@ func (*Fs) Create(req *srv.Req) {
 	dir = fid.file
 	user := req.Fid.User
 	f, err := dir.Create(tc.Name, tc.Perm, user, fs.group, tc.Ext)
-	if err!=nil {
+	if err != nil {
 		req.RespondError(toError(err))
 		return
 	}
@@ -136,7 +136,7 @@ func (*Fs) Create(req *srv.Req) {
 
 func (*Fs) Read(req *srv.Req) {
 	var fi FileInfo
-	var err os.Error
+	var err error
 
 	fid := req.Fid.Aux.(*Fid)
 	tc := req.Tc
@@ -144,7 +144,7 @@ func (*Fs) Read(req *srv.Req) {
 	p.InitRread(rc, tc.Count)
 
 	count := 0
-	if fid.file.Mode & p.DMDIR != 0 {
+	if fid.file.Mode&p.DMDIR != 0 {
 		offset := tc.Offset
 		if tc.Offset != 0 {
 			offset = fid.diroffset
@@ -162,7 +162,7 @@ func (*Fs) Read(req *srv.Req) {
 			f = decodeFileInfo(f, &fi)
 			fmt.Printf("9P Read: name %s entrySize %d\n", fi.Name, fi.entrySize)
 			n := p.PackDir(&fi.Dir, t, req.Conn.Dotu)
-			if n==0 {
+			if n == 0 {
 				break
 			}
 
@@ -249,12 +249,12 @@ func (*Fs) Wstat(req *srv.Req) {
 		fi.Mode = dir.Mode
 	}
 
-	if uid!=nil {
+	if uid != nil {
 		fi.Uid = gid.Name()
 		fi.Uidnum = uint32(uid.Id())
 	}
 
-	if gid!=nil {
+	if gid != nil {
 		fi.Gid = gid.Name()
 		fi.Gidnum = uint32(gid.Id())
 	}
@@ -268,7 +268,7 @@ func (*Fs) Wstat(req *srv.Req) {
 	}
 
 	err := fid.file.Wstat(&fi)
-	if err!=nil {
+	if err != nil {
 		req.RespondError(toError(err))
 	} else {
 		req.RespondRwstat()

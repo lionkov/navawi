@@ -31,7 +31,7 @@ func NewDiskCache(d *os.File, blksz uint32, maxcount uint32) *DiskCache {
 	return dc
 }
 
-func (dc *DiskCache) newEntry(offset uint64) (*entry, os.Error) {
+func (dc *DiskCache) newEntry(offset uint64) (*entry, error) {
 	e := new(entry)
 	e.offset = offset
 	e.data = make([]byte, dc.blksz)
@@ -61,7 +61,7 @@ func (dc *DiskCache) lruremove() {
 }
 
 // count <= blksz
-func (dc *DiskCache) Read(offset uint64, count uint32) ([]byte, os.Error) {
+func (dc *DiskCache) Read(offset uint64, count uint32) ([]byte, error) {
 	var en[2] *entry
 	var f0, f1 bool
 	var data []byte
@@ -79,7 +79,7 @@ func (dc *DiskCache) Read(offset uint64, count uint32) ([]byte, os.Error) {
 	dc.Unlock()
 
 	if en[0] == nil {
-		var err os.Error
+		var err error
 		en[0], err = dc.newEntry(off)
 		if err!=nil {
 			return nil, err
@@ -87,7 +87,7 @@ func (dc *DiskCache) Read(offset uint64, count uint32) ([]byte, os.Error) {
 	}
 
 	if over && en[1] == nil {
-		var err os.Error
+		var err error
 		en[1], err = dc.newEntry(off + uint64(dc.blksz))
 		if err!=nil {
 			return nil, err
