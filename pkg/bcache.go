@@ -529,7 +529,8 @@ func (bc *BlockCache) commit() os.Error {
 	// remove uncommitted blocks with odd offsets from the cache
 	bc.Lock()
 	for c0 < c1 {
-		if bc.liveblocks[c0]!=nil {
+		if bc.liveblocks[c0]==nil {
+			fmt.Printf("BlockCache.commit remove block %d from cache\n", c0)
 			bc.cache[c0] = nil, false
 		}
 
@@ -560,12 +561,13 @@ func (bc *BlockCache) NewBlock(blktype uint16, root bool, length uint16) *Block 
 
 func (bc *BlockCache) AddLiveBlock(b *Block) {
 	bc.Lock()
-//	fmt.Printf("BlockCache.AddLiveBlock %p %v\n", b, b.Offset)
+	fmt.Printf("BlockCache.AddLiveBlock %p\n", b)
 	bc.liveblocks[b.Offset] = b
 	bc.Unlock()
 }
 
 func (bc *BlockCache) RemoveLiveBlock(b *Block) {
+	fmt.Printf("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
 	bc.Lock()
 	bc.liveblocks[b.Offset] = nil, false
 	if b.ucid!=0 {

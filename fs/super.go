@@ -50,6 +50,7 @@ func ReadSuper() os.Error {
 	decodeFileInfo(buf, &super.root.FileInfo)
 	super.root.Ref()
 	super.nextpath, _ = gint64(buf[super.blocksz-8:])
+	fmt.Printf("Root file %p\n", super.root)
 
 	fmt.Printf("Super block %d found, root %d nextpath %d\n", super.id, super.root.Root, super.nextpath)
 	return nil
@@ -70,7 +71,8 @@ func UpdateSuper() os.Error {
 		return nil
 	}
 
-	fmt.Printf("UpdateSuper: new super %d\n", id)
+	fmt.Printf("UpdateSuper: new super %d root %d\n", id, super.root.Root)
+	gostor.Forget(super.id)
 	super.id = id
 	super.blocksz = uint64(len(data))
 	super.Unlock()
@@ -95,7 +97,10 @@ func CreateSuper() os.Error {
 //	root.Ctime = time.Seconds()
 	root.Mtime = uint32(time.Seconds())
 	root.Root = 0
+	root.Ref()
+	fmt.Printf("Root file %p\n", root)
 	super.root = root
+	
 	return UpdateSuper()
 }
 

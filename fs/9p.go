@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"syscall"
@@ -15,7 +16,8 @@ type Fs struct {
 }
 
 type Fid struct {
-	file	*File
+	file		*File
+	diroffset	uint64
 }
 
 func toError(err os.Error) *p.Error {
@@ -80,17 +82,18 @@ func (*Fs) Walk(req *srv.Req) {
 	}
 
 	nfid := req.Newfid.Aux.(*Fid)
+	nfid.file.Ref()
 	wqids := make([]p.Qid, len(tc.Wname))
 	i := 0
 	f := fid.file
+	f.Ref()
 	for ; i < len(tc.Wname); i++ {
-		f.Ref()
 		fn, err := f.Find(tc.Wname[i])
 		if err!=nil {
-			f.Unref()
 			break
 		}
 
+		f.Unref()
 		f = fn
 		wqids[i] = f.Qid
 	}
@@ -101,6 +104,7 @@ func (*Fs) Walk(req *srv.Req) {
 		return
 	}
 
+	nfid.file.Unref()
 	nfid.file = f
 	req.RespondRwalk(wqids[0:i])
 }
@@ -141,25 +145,32 @@ func (*Fs) Read(req *srv.Req) {
 
 	count := 0
 	if fid.file.Mode & p.DMDIR != 0 {
-		n, err := fid.file.Read(tc.Offset, rc.Data)
+		offset := tc.Offset
+		if tc.Offset != 0 {
+			offset = fid.diroffset
+		}
+
+		n, err := fid.file.Read(offset, rc.Data)
 		if err != nil {
 			req.RespondError(toError(err))
 			return
 		}
 
+		elen := 0
 		for f, t := rc.Data[0:n], rc.Data[0:n]; len(f) > 0; {
 			decodeEntry(f)
-			decodeFileInfo(f, &fi)
+			f = decodeFileInfo(f, &fi)
+			fmt.Printf("9P Read: name %s entrySize %d\n", fi.Name, fi.entrySize)
 			n := p.PackDir(&fi.Dir, t, req.Conn.Dotu)
 			if n==0 {
 				break
 			}
 
-			f = f[fi.entrySize:]
 			t = t[n:]
 			count += n
+			elen += int(sizeFileInfo(&fi))
 		}
-
+		fid.diroffset = offset + uint64(elen)
 	} else {
 		count, err = fid.file.Read(tc.Offset, rc.Data)
 		if err != nil {

@@ -720,26 +720,27 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	}
 
 	rootblk.SetRoot(true)
+	bc.AddLiveBlock(rootblk)
 	bc.Store(rootblk, true, nil)
 	fmt.Printf("Store root block %v %v\n", rootblk.Offset, rootblk.Data)
 	return rootblk.Offset, nil
 }
 
 func Read(root, offset uint64, data []byte) (int, os.Error) {
-//	fmt.Printf("Read root %v offset %v count %v\n", root, offset, len(data))
+	fmt.Printf("Read root %v offset %v count %v\n", root, offset, len(data))
 	bp, err := find(root, offset)
 	if err!=nil {
 		return 0, err
 	}
 
-	for i:=0; i < bp.levels; i++ {
+//	for i:=0; i < bp.levels; i++ {
 //		fmt.Printf("level %d b %p start %v end %v pos %v\n", i, bp.entries[i].Block, bp.entries[i].start, bp.entries[i].end, bp.entries[i].pos)
-	}
+//	}
 
 	count := 0
 	e := &bp.entries[0]
 	for len(data) > 0 {
-//		fmt.Printf("entry start %v end %v\n", e.start, e.pos)
+		fmt.Printf("Read: entry start %v end %v\n", e.start, e.pos)
 		n := len(data)
 		if n > int(e.end - e.start - uint64(e.pos)) {
 			n = int(e.end - e.start - uint64(e.pos))
@@ -751,7 +752,7 @@ func Read(root, offset uint64, data []byte) (int, os.Error) {
 				data[i] = 0
 			}
 		} else {
-//			fmt.Printf("Data for %d bytes\n", n)
+			fmt.Printf("Data for %d bytes\n", n)
 			copy(data, e.Data[e.pos:e.pos+uint64(n)])
 		}
 
@@ -767,6 +768,7 @@ func Read(root, offset uint64, data []byte) (int, os.Error) {
 		}
 	}
 
+	fmt.Printf("Read: got %d bytes\n", count)
 	return count, nil
 }
 

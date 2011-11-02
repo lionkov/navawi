@@ -1,6 +1,7 @@
 package gostor
 
 import (
+	"fmt"
 	"os"
 )
 
@@ -89,6 +90,7 @@ func Sync(root uint64) os.Error {
 // Forget the file with ID root. If the file is not referenced by other files
 // it will be garbage collected (eventually)
 func Forget(root uint64) os.Error {
+	fmt.Printf("Forget %d\n", root)
 	b, err := bc.Get(root)
 	if err!=nil {
 		return err

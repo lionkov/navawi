@@ -18,8 +18,7 @@ type File struct {
 	dir		*File
 	ref		int32
 
-	diroffset 	uint64
-	next, prev	*File	// next sibling
+	next, prev	*File			// next sibling
 	children	map[string]*File	// list of children, if directory
 }
 
@@ -65,6 +64,7 @@ func (f *File) Remove() os.Error {
 		dir.Unlock()
 		return err
 	}
+	gostor.Forget(dir.Root)
 	dir.Root = newroot
 
 	// remove the file from the children map
@@ -132,6 +132,7 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 	}
 
 	// create succeeded, update the offsets
+	gostor.Forget(dir.Root)
 	dir.Root = newroot
 	for _, c := range dir.children {
 		if c!=f && c.entryOffset >= f.entryOffset {
@@ -143,14 +144,25 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 }
 
 func (f *File) Ref() {
+	fmt.Printf("File.Ref %p\n", f)
+	if f==nil {
+		return
+	}
+
 	atomic.AddInt32(&f.ref, 1)
 }
 
 func (f *File) Unref() {
+	fmt.Printf("File.Unref %p\n", f)
+	if f==nil {
+		return
+	}
+
 	if atomic.AddInt32(&f.ref, -1) > 0 {
 		return
 	}
 
+	fmt.Printf("File.Unref %p destroyed\n", f)
 	gostor.Forget(f.Root)
 }
 
@@ -159,7 +171,9 @@ func (f *File) Read(offset uint64, buf []byte) (int, os.Error) {
 	root := f.Root
 	f.Unlock()
 
-	return gostor.Read(root, offset, buf)
+	count, err := gostor.Read(root, offset, buf)
+	fmt.Printf("File.Read count %d error %v\n", count, err)
+	return count, err
 }
 
 func (f *File) Write(offset uint64, buf []byte) (int, os.Error) {
@@ -169,6 +183,7 @@ func (f *File) Write(offset uint64, buf []byte) (int, os.Error) {
 		f.wlock.Unlock()
 		return 0, err
 	}
+	gostor.Forget(f.Root)
 	f.Root = newroot
 	f.wlock.Unlock()
 	err = f.update()
@@ -193,6 +208,7 @@ func (f *File) Wstat(fi *FileInfo) os.Error {
 				return err
 			}
 
+			gostor.Forget(fi.Root)
 			fi.Root = newroot
 		}
 	}
@@ -209,6 +225,7 @@ func (f *File) Wstat(fi *FileInfo) os.Error {
 	}
 
 	if err==nil {
+		gostor.Forget(f.dir.Root)
 		f.dir.Root = newdir
 	}
 	f.dir.wlock.Unlock()
@@ -216,7 +233,12 @@ func (f *File) Wstat(fi *FileInfo) os.Error {
 	if err!=nil {
 		return err
 	}
-		
+
+	err = f.dir.update()
+	if err!=nil {
+		return err
+	}
+
 	f.wlock.Lock()
 	f.FileInfo = *fi
 	f.wlock.Unlock()
@@ -234,6 +256,7 @@ func (f *File) update() os.Error {
 			return err
 		}
 
+		gostor.Forget(d.Root)
 		d.Root = newroot
 		d.wlock.Unlock()
 	}
