@@ -185,7 +185,13 @@ func (f *File) Write(offset uint64, buf []byte) (int, error) {
 	}
 	gostor.Forget(f.Root)
 	f.Root = newroot
+	f.Length, err = gostor.Size(f.Root)
+	fmt.Printf("File.Write new size %d\n", f.Length)
 	f.wlock.Unlock()
+	if err!=nil {
+		return 0, err
+	}
+
 	err = f.update()
 
 	return len(buf), err

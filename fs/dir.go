@@ -248,6 +248,7 @@ func bsearchEntry(dir uint64, name string) (uint64, []byte, error) {
 	}
 
 	for b < t {
+		fmt.Printf("bsearchEntry: b %d e %d\n", b, t)
 		n = (b + t) / 2
 		offset, entry, err = findEntry(dir, n)
 		if err != nil {
@@ -256,15 +257,18 @@ func bsearchEntry(dir uint64, name string) (uint64, []byte, error) {
 
 		decodeEntry(entry)
 		ename := entryName(entry)
+		fmt.Printf("bsearchEntry: compare ename %s (%d) to %s less %v\n", ename, offset, name, ename < name)
 		if ename == name {
 			return offset, entry, nil
 		} else if ename < name {
 			b = offset + uint64(len(entry))
+			offset = b
 		} else {
 			t = offset
 		}
 	}
 
+	fmt.Printf("bsearchEntry: return %d\n", offset)
 	return offset, nil, nil
 }
 
@@ -445,12 +449,13 @@ func (btDirEntry) Files(data []byte) []uint64 {
 		return make([]uint64, 0)
 	}
 
-	for len(data) > 0 {
-		n := bytes.IndexByte(data[1:], 0xFF)
+	for len(data) > 4 {
+		fmt.Printf("btDirEntry.Files len(data) %d %v\n", len(data), data)
+		n := bytes.IndexByte(data[4:], 0xFF)
 		if n < 0 {
 			n = len(data)
 		} else {
-			n++
+			n += 4
 		}
 
 		//		fmt.Printf("btDirEntry.Files: n %d remaining data: %v\n", n, data)
@@ -471,12 +476,12 @@ func (btDirEntry) Commit(data []byte) bool {
 		return true
 	}
 
-	for len(data) > 0 {
-		n := bytes.IndexByte(data[1:], 0xFF)
+	for len(data) > 4 {
+		n := bytes.IndexByte(data[4:], 0xFF)
 		if n < 0 {
 			n = len(data)
 		} else {
-			n++
+			n += 4
 		}
 
 		entry := data[0:n]
