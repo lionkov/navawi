@@ -126,6 +126,7 @@ func (btSuper) Commit(data []byte) bool {
 		return false
 	}
 
+	fmt.Printf("btSuper.Commit: data %p replace %d -> %d\n", data, id, newid)
 	pint64(newid, data[len(data)-16:])
 	return true
 }

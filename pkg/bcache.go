@@ -565,10 +565,50 @@ func (bc *BlockCache) RemoveLiveBlock(b *Block) {
 	fmt.Printf("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
 	bc.Lock()
 	bc.liveblocks[b.Offset] = nil, false
-	if b.ucid!=0 {
-		bc.liveblocks[b.ucid] = nil, false
-		bc.cache[b.ucid] = nil, false
+	if b.ucid==0 {
+		bc.Unlock()
+		return
 	}
+
+	// check all uncommitted blocks for references to ucid
+	bs := make([]*Block, 0, 16)
+	for ub := bc.ucfirst; ub != nil; ub = ub.ucnext {
+		btype := ub.Type()
+		if btype==BTData {
+			continue
+		}
+
+		if ub.bt==nil {
+			ub.bt = bc.dtypes[btype]
+		}
+
+		if ub.blkref==nil {
+			ub.blkref = ub.bt.Files(ub.Data)
+		}
+
+		if ub.blkref==nil {
+			continue
+		}
+
+		for _, bid := range ub.blkref {
+			if bid == b.ucid {
+				bs = append(bs, ub)
+				break
+			}
+		}
+	}
+	b.ucid = 0
+	bc.Unlock()
+
+	// is that safe? should be, even if commit is running, it will do the same thing
+	for _, ub := range bs {
+		// replace with the new ID
+		ub.bt.Commit(ub.Data)
+	}
+
+	bc.Lock()
+	bc.liveblocks[b.ucid] = nil, false
+	bc.cache[b.ucid] = nil, false
 	bc.Unlock()
 }
 

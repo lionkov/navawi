@@ -449,6 +449,7 @@ func (btDirEntry) Files(data []byte) []uint64 {
 		return make([]uint64, 0)
 	}
 
+	fmt.Printf("btDirEntry.Files data %p\n", data)
 	for len(data) > 4 {
 		fmt.Printf("btDirEntry.Files len(data) %d %v\n", len(data), data)
 		n := bytes.IndexByte(data[4:], 0xFF)
@@ -476,6 +477,7 @@ func (btDirEntry) Commit(data []byte) bool {
 		return true
 	}
 
+	fmt.Printf("btDirEntry.Commit: data %p\n", data)
 	for len(data) > 4 {
 		n := bytes.IndexByte(data[4:], 0xFF)
 		if n < 0 {
@@ -493,7 +495,7 @@ func (btDirEntry) Commit(data []byte) bool {
 			return false
 		}
 
-		//		fmt.Printf("btDirEntry.Commit: %d -> %d\n", id, newid)
+		fmt.Printf("btDirEntry.Commit: replace %d -> %d\n", id, newid)
 		pint64(newid, entry[len(entry)-8:])
 		encodeEntry(entry)
 		data = data[n:]

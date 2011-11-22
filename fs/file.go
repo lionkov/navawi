@@ -104,7 +104,7 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 	f.Path = path
 	f.Version = 1
 	f.Mode = mode
-	f.Mtime = uint32(time.Seconds() >> 32 / 1000000000)
+	f.Mtime = uint32(time.Seconds())
 	f.Length = 0
 	f.Name = name
 	f.Uid = uid.Name()

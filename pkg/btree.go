@@ -98,7 +98,7 @@ func find(root uint64, offset uint64) (bp *BTPath, err error) {
 		e.pos = uint64(pos)
 		e.start = start
 		e.end = end
-		if pos > e.entnum {
+		if pos >= e.entnum {
 			b = nil
 			continue
 		}
@@ -673,7 +673,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		}
 
 //		fmt.Printf("bnum %d sof %v sof %v\n", bnum, sof, eof)
-		if bnum==1 && sof && eof {
+		if bnum==1 && sof && eof && len(blks) == 1 {
 			rootblk = blks[0]
 			break
 		}
@@ -722,7 +722,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	rootblk.SetRoot(true)
 	bc.AddLiveBlock(rootblk)
 	bc.Store(rootblk, true, nil)
-	fmt.Printf("Store root block %v %v\n", rootblk.Offset, rootblk.Data)
+	fmt.Printf("Store root block %v %p %v\n", rootblk.Offset, rootblk.Data, rootblk.Data)
 	return rootblk.Offset, nil
 }
 
@@ -754,6 +754,10 @@ func Read(root, offset uint64, data []byte) (int, error) {
 		} else {
 			fmt.Printf("Data for %d bytes\n", n)
 			copy(data, e.Data[e.pos:e.pos+uint64(n)])
+		}
+
+		if n==len(data) {
+			break
 		}
 
 		data = data[n:]
@@ -817,6 +821,7 @@ func (btnode) Commit(data []byte) bool {
 				return false
 			}
 
+			fmt.Printf("btnode.Commit replace %d with %d\n", bid, cb.Offset)
 			pint64(cb.Offset, ent)
 		}
 	}
