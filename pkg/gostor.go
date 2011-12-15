@@ -137,16 +137,19 @@ func Size(root uint64) (uint64, error) {
 		return 0, err
 	}
 
-	if b.blktype<BTNode1 || b.blktype>BTNode7 {
-		return uint64(len(b.Data)), nil
-	}
-
-	nent := len(b.Data)/BTEntrySize
 	sz := uint64(0)
-	for i:=0; i<nent; i++ {
-		n, _ := gint64(b.Data[i*BTEntrySize:])
-		sz += n
+	blktype := b.Type()
+	if blktype<BTNode1 || blktype>BTNode7 {
+		sz = uint64(len(b.Data))
+	} else {
+		nent := len(b.Data)/BTEntrySize
+		fmt.Printf("Size: nent %d %v\n", nent, b.Data)
+		for i:=0; i<nent; i++ {
+			n, _ := gint64(b.Data[i*BTEntrySize+8:])
+			sz += n
+		}
 	}
 
+	fmt.Printf("Size %d %d\n", root, sz)
 	return sz, nil
 }

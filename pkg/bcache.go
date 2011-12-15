@@ -165,7 +165,7 @@ func RegisterDataType(bt DataType) bool {
 
 // reads a block from the disk and parses the header
 func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
-	fmt.Printf("BlockCache.readBlock offset %d\n", offset)
+//	fmt.Printf("BlockCache.readBlock offset %d\n", offset)
 	b.Offset = offset
 	hdr, err := bc.dc.Read(offset, BTHeaderSize)
 	if err!=nil {
@@ -175,9 +175,9 @@ func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
 //	fmt.Printf("BlockCache.readBlock: offset %v header %v\n", offset, hdr)
 	magic, p := gint32(hdr)
 	if magic != BTMagic {
-		var str *string
-		*str = "boo"
-		return errors.New("invalid block header")
+//		var str *string
+//		*str = "boo"
+		return errors.New(fmt.Sprintf("invalid block header: offset %d", offset))
 	}
 
 	b.Length, p = gint16(p)
@@ -197,7 +197,7 @@ func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
 func (bc *BlockCache) makeSpace() {
 	if uint32(len(bc.cache)) >= bc.maxcount {
 		db := bc.lru
-		bc.cache[db.Offset] = nil, false
+		delete(bc.cache, db.Offset)
 		if db.mru != nil {
 			db.mru.lru = nil
 		} else {
@@ -228,6 +228,7 @@ func (bc *BlockCache) Get(offset uint64) (*Block, error) {
 		// 1. no reading from the disk
 		// 2. not in the lru list
 		if b==nil {
+			fmt.Printf("**** uncommitted block %d not found", offset)
 			err = errors.New(fmt.Sprintf("uncommitted block %d not found", offset))
 		}
 
@@ -301,19 +302,16 @@ func (bc *BlockCache) Release(b *Block) {
 
 // if specified, blkref should return the same list that Blocks() call for the
 // block type
-func (bc *BlockCache) Store(b *Block, live bool, blkref []uint64) error {
+// called with bc lock held
+func (bc *BlockCache) store(b *Block, live bool, blkref []uint64) error {
 	p := pint32(BTMagic, b.raw)
 	p = pint16(b.Length, p)
 	p = pint16(b.blktype, p)
 
-	bc.Lock()
 	if bc.err != nil {
-		bc.Unlock()
 		return bc.err
 	}
 
-	b.Offset = bc.ucoffset
-	bc.ucoffset += 2
 	b.coffset = bc.coffset
 	bc.cache[b.Offset] = b
 	b.ucprev = bc.uclast
@@ -331,9 +329,29 @@ func (bc *BlockCache) Store(b *Block, live bool, blkref []uint64) error {
 		bc.liveblocks[b.Offset] = b
 	}
 
-	bc.checkCommit()
-	bc.Unlock()
+	return nil
+}
 
+func (bc *BlockCache) Store(b *Block, live bool, blkref []uint64) error {
+	bc.Lock()
+	defer bc.Unlock()
+	err := bc.store(b, live, blkref)
+	bc.checkCommit()
+	return err
+}
+
+// Store all blocks from the array atomically, making the root ones live
+func (bc *BlockCache) StoreBlocks(bs []*Block) error {
+	bc.Lock()
+	defer bc.Unlock()
+	for _, b := range bs {
+		err := bc.store(b, b.IsRoot(), nil)
+		if err!=nil {
+			return err
+		}
+	}
+
+	bc.checkCommit()
 	return nil
 }
 
@@ -391,7 +409,8 @@ func (bc *BlockCache) gc() {
 			}
 
 			// remove from the cache
-			bc.cache[b.Offset] = nil, false
+//			fmt.Printf("remove from cache block %d\n", b.Offset)
+			delete(bc.cache, b.Offset)
 
 			bc.ucsize -= uint32(b.Length + b.Length%2 + BTHeaderSize)
 		}
@@ -418,7 +437,7 @@ func (bc *BlockCache) mark(b *Block) {
 	}
 
 	if b.blkref==nil {
-		fmt.Printf("BlockCache.mark %d\n", b.Offset)
+//		fmt.Printf("BlockCache.mark %d\n", b.Offset)
 		b.blkref = b.bt.Files(b.Data)
 	}
 
@@ -448,7 +467,7 @@ func (bc *BlockCache) commit() error {
 		return nil
 	}
 
-	fmt.Printf("BlockCache.commit ucsize %d ucfirst %p\n", bc.ucsize, bc.ucfirst)
+//	fmt.Printf("BlockCache.commit ucsize %d ucfirst %p\n", bc.ucsize, bc.ucfirst)
 	frag, err := sm.AllocFragment(uint32(bc.ucfirst.Length + BTHeaderSize), bc.ucsize)
 	if err!=nil {
 		bc.Unlock()
@@ -525,8 +544,8 @@ func (bc *BlockCache) commit() error {
 	bc.Lock()
 	for c0 < c1 {
 		if bc.liveblocks[c0]==nil {
-			fmt.Printf("BlockCache.commit remove block %d from cache\n", c0)
-			bc.cache[c0] = nil, false
+//			fmt.Printf("BlockCache.commit remove block %d from cache\n", c0)
+			delete(bc.cache, c0)
 		}
 
 		c0 += 2
@@ -550,21 +569,25 @@ func (bc *BlockCache) NewBlock(blktype uint16, root bool, length uint16) *Block 
 	}
 
 	b.Data = b.raw[BTHeaderSize:]
-	b.Offset = 0xFFFFFFFFFFFFFFFF
+	bc.Lock()
+	b.Offset = bc.ucoffset
+	bc.ucoffset += 2
+	bc.Unlock()
+
 	return b
 }
 
 func (bc *BlockCache) AddLiveBlock(b *Block) {
 	bc.Lock()
-	fmt.Printf("BlockCache.AddLiveBlock %p\n", b)
+//	fmt.Printf("BlockCache.AddLiveBlock %p\n", b)
 	bc.liveblocks[b.Offset] = b
 	bc.Unlock()
 }
 
 func (bc *BlockCache) RemoveLiveBlock(b *Block) {
-	fmt.Printf("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
+//	fmt.Printf("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
 	bc.Lock()
-	bc.liveblocks[b.Offset] = nil, false
+	delete(bc.liveblocks, b.Offset)
 	if b.ucid==0 {
 		bc.Unlock()
 		return
@@ -607,8 +630,8 @@ func (bc *BlockCache) RemoveLiveBlock(b *Block) {
 	}
 
 	bc.Lock()
-	bc.liveblocks[b.ucid] = nil, false
-	bc.cache[b.ucid] = nil, false
+	delete(bc.liveblocks, b.ucid)
+	delete(bc.cache, b.ucid)
 	bc.Unlock()
 }
 
@@ -636,10 +659,6 @@ func (b *Block) Level() int {
 	}
 
 	return int(blktype - BTNode1) + 1
-}
-
-func (b *Block) IsStored() bool {
-	return b.Offset != 0xFFFFFFFFFFFFFFFF
 }
 
 func (b *Block) IsCommitted() bool {

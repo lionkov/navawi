@@ -15,7 +15,7 @@ func main() {
 	var d *os.File
 
 	flag.Parse()
-	var fi *os.FileInfo
+	var fi os.FileInfo
 
 	d, err = os.OpenFile(*disk, os.O_RDWR, 0666)
 	if err!=nil {
@@ -27,7 +27,7 @@ func main() {
 		goto error
 	}
 
-	err = gostor.FormatDisk(d, uint64(fi.Size), gostor.Conf.Segmentsz)
+	err = gostor.FormatDisk(d, uint64(fi.Size()), gostor.Conf.Segmentsz)
 	if err!=nil {
 		goto error
 	}

@@ -57,7 +57,7 @@ func (dc *DiskCache) lruremove() {
 	}
 
 	dc.lru = e.mru
-	dc.cache[e.offset] = nil, false
+	delete(dc.cache, e.offset)
 }
 
 // count <= blksz
@@ -138,7 +138,7 @@ func (dc *DiskCache) Discard(start, end uint64) {
 	eoff := end - end%uint64(dc.blksz) + uint64(dc.blksz)
 	for soff < eoff {
 		e := dc.cache[soff]
-		dc.cache[soff] = nil, false
+		delete(dc.cache, soff)
 
 		// remove from the LRU list
 		if e.lru!=nil {

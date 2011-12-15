@@ -97,6 +97,7 @@ func readBackUntilStart(dir, offset uint64, buf []byte) (uint64, []byte, error) 
 		}
 
 		if n != size {
+			fmt.Printf("short read expected %d got %d\n", size, n)
 			return 0, nil, errors.New("short read")
 		}
 
@@ -117,7 +118,7 @@ func findEntry(dir, offset uint64) (uint64, []byte, error) {
 	var pos int
 	var buf []byte
 
-	//	fmt.Printf("findEntry offset %d\n", offset)
+	fmt.Printf("findEntry offset %d\n", offset)
 	// read forward until we find 0xFF
 	for {
 		if buf == nil {
@@ -146,7 +147,7 @@ func findEntry(dir, offset uint64) (uint64, []byte, error) {
 		}
 	}
 
-	//	fmt.Printf("findEntry: read forward %d bytes\n", len(buf))
+	fmt.Printf("findEntry: read forward %d bytes\n", len(buf))
 	// read backward until we find 0xFF
 L:
 	for {
@@ -164,6 +165,7 @@ L:
 		}
 
 		if n != size {
+			fmt.Printf("short read expected %d got %d\n", size, n)
 			return 0, nil, errors.New("short read")
 		}
 
@@ -176,7 +178,7 @@ L:
 		}
 	}
 
-	//	fmt.Printf("findEntry: read backward to offset %d len %d\n", offset, len(buf))
+	fmt.Printf("findEntry: read backward to offset %d len %d\n", offset, len(buf))
 	return offset, buf, nil
 }
 

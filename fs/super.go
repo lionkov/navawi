@@ -95,7 +95,7 @@ func CreateSuper() error {
 	root.Gidnum = uint32(fs.group.Id())
 	root.Name = ""
 	//	root.Ctime = time.Seconds()
-	root.Mtime = uint32(time.Seconds())
+	root.Mtime = uint32(time.Now().Unix())
 	root.Root = 0
 	root.Ref()
 	fmt.Printf("Root file %p\n", root)

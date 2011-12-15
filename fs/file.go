@@ -61,7 +61,7 @@ func (f *File) Remove() error {
 
 	newroot, err := RemoveEntry(dir.Root, &f.FileInfo)
 	if err != nil {
-		dir.Unlock()
+		dir.wlock.Unlock()
 		return err
 	}
 	gostor.Forget(dir.Root)
@@ -104,7 +104,7 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 	f.Path = path
 	f.Version = 1
 	f.Mode = mode
-	f.Mtime = uint32(time.Seconds())
+	f.Mtime = uint32(time.Now().Unix())
 	f.Length = 0
 	f.Name = name
 	f.Uid = uid.Name()
@@ -217,6 +217,8 @@ func (f *File) Wstat(fi *FileInfo) error {
 			gostor.Forget(fi.Root)
 			fi.Root = newroot
 		}
+
+		f.Length = fi.Length
 	}
 
 	f.dir.wlock.Lock()

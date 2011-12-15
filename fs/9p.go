@@ -5,7 +5,6 @@ import (
 	"go9p.googlecode.com/hg/p"
 	"go9p.googlecode.com/hg/p/srv"
 	"log"
-	"os"
 	"syscall"
 )
 
@@ -21,16 +20,16 @@ type Fid struct {
 }
 
 func toError(err error) *p.Error {
-	var ecode os.Errno
+	var ecode syscall.Errno
 
 	ename := err.Error()
-	if e, ok := err.(os.Errno); ok {
+	if e, ok := err.(syscall.Errno); ok {
 		ecode = e
 	} else {
 		ecode = syscall.EIO
 	}
 
-	return &p.Error{ename, int(ecode)}
+	return &p.Error{ename, ecode}
 }
 
 func (*Fs) ConnOpened(conn *srv.Conn) {
