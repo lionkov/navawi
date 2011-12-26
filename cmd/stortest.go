@@ -41,7 +41,7 @@ func Read(root, offset uint64, data []byte) (int, error) {
 		return 0, errors.New("invalid root")
 	}
 
-	n1, err1 := gostor.Read(root, offset, data)
+	n1, err1, _ := gostor.Read(root, offset, data)
 	if err1 != nil {
 		return 0, err1
 	}
@@ -86,7 +86,7 @@ func main() {
 	data = make([]byte, 100)
 	buf = make([]byte, len(data))
 	if *readid != 0 {
-		n, err = gostor.Read(uint64(*readid), 0, buf)
+		n, err, _ = gostor.Read(uint64(*readid), 0, buf)
 		if err != nil {
 			goto error
 		}

@@ -4,7 +4,7 @@
 
 include $(GOROOT)/src/Make.inc
 
-TARG=storfmt stortest
+TARG=storfmt stortest storfsx
 OFILES=$(TARG:%=%.$O)
 
 all: $(TARG)
