@@ -8,8 +8,7 @@ import (
 	"os"
 	"syscall"
 	"gostor"
-	"go9p.googlecode.com/hg/p"
-//	"go9p.googlecode.com/hg/p/srv"
+        "code.google.com/p/go9p/p"
 )
 
 var addr = flag.String("addr", ":5640", "network address")

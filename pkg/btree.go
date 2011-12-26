@@ -371,8 +371,6 @@ func (bp *BTPath) isEndOfFile(level int) bool {
 		if bp.entries[0].pos < bp.entries[0].end - bp.entries[0].start {
 			return false
 		}
-
-		level++
 	}
 
 	for level++; level < bp.levels; level++ {
@@ -584,8 +582,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	var newblocks []*Block
 	var rootblk *Block
 
-//	fmt.Printf("***************************************************\n")
-	fmt.Printf("Write root %v start %v end %v count %d\n", root, start, end, count)
+//	fmt.Printf("Write root %v start %v end %v count %d\n", root, start, end, count)
 	sbp, err := find(root, start)
 	if err != nil {
 		return 0, err
@@ -805,7 +802,6 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		if lblk != nil {
 			// left unmerged data
 			newblocks = append(newblocks, lblk)
-//			bc.Store(lblk, false, nil)
 //			fmt.Printf("Store block %v type %x %v\n", lblk.Offset, lblk.Type(), lblk.Data)
 			p = pint64(lblk.Offset, p)
 			p = pint64(blockSize(lblk), p)
@@ -820,8 +816,6 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 		newblocks = append(newblocks, blks...)
 		for i:=0; i < len(blks); i++ {
-//			bc.Store(blks[i], false, nil)
-//			fmt.Printf("Store block %v type %x %v\n", blks[i].Offset, blks[i].Type(), blks[i].Data)
 			p = pint64(blks[i].Offset, p)
 			p = pint64(blockSize(blks[i]), p)
 		}
@@ -836,16 +830,9 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		if rblk != nil {
 			// left unmerged data
 			newblocks = append(newblocks, rblk)
-//			bc.Store(rblk, false, nil)
-//			fmt.Printf("Store block %v type %x %v\n", rblk.Offset, rblk.Type(), rblk.Data)
 			p = pint64(rblk.Offset, p)
 			p = pint64(blockSize(rblk), p)
 		}
-
-//		fmt.Printf("le %v re %v\n", le, re)
-//		if le {
-//			sbp.prev(l)
-//		}
 
 		maxblksz = Conf.Maxblocksz
 		ctype = BTNode1 + uint16(l)
@@ -858,48 +845,101 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 	rootblk.SetRoot(true)
 	newblocks = append(newblocks, rootblk)
-//	bc.AddLiveBlock(rootblk)
-//	bc.Store(rootblk, true, nil)
-	fmt.Printf("Store root block %v %p %v\n", rootblk.Offset, rootblk.Data, rootblk.Data)
+//	fmt.Printf("Store root block %v %p %v\n", rootblk.Offset, rootblk.Data, rootblk.Data)
 	err = bc.StoreBlocks(newblocks)
 	return rootblk.Offset, err
 }
 
-func Read(root, offset uint64, data []byte) (int, error) {
-	fmt.Printf("Read root %v offset %v count %v\n", root, offset, len(data))
+func Read(root, offset uint64, data []byte) (int, error, uint16) {
+//	fmt.Printf("Read root %v offset %v count %v\n", root, offset, len(data))
 	bp, err := find(root, offset)
 	if err!=nil || bp.isEndOfFile(0) {
-		return 0, err
+		return 0, err, BTHole
 	}
 
 	count := 0
 	e := &bp.entries[0]
+	ctype := uint16(BTHole)
+	if e.Block != nil {
+		ctype = e.Type()
+	}
+
 	for len(data) > 0 {
-//		fmt.Printf("Read: entry start %v end %v\n", e.start, e.pos)
+//		fmt.Printf("Read: entry start %v end %v pos %v b %p\n", e.start, e.end, e.pos, e.Block)
 		n := len(data)
 		if n > int(e.end - e.start - uint64(e.pos)) {
 			n = int(e.end - e.start - uint64(e.pos))
 		}
 
-		if e.Block==nil {
-//			fmt.Printf("Hole for %d bytes\n", n)
-			for i:=0; i < n; i++ {
-				data[i] = 0
+		if n>0 {
+			if e.Block==nil {
+//				fmt.Printf("Hole for %d bytes\n", n)
+				for i:=0; i < n; i++ {
+					data[i] = 0
+				}
+				ctype = BTHole
+			} else {
+//				fmt.Printf("Data for %d bytes\n", n)
+				copy(data, e.Data[e.pos:e.pos+uint64(n)])
 			}
-		} else {
-//			fmt.Printf("Data for %d bytes\n", n)
-			copy(data, e.Data[e.pos:e.pos+uint64(n)])
+
+			count += n
+			if n==len(data) {
+				break
+			}
+
+			data = data[n:]
 		}
 
-		count += n
-		if n==len(data) {
+		moved, err := bp.next(0)
+		if err!=nil {
+			return 0, err, BTUnknown
+		}
+
+		if !moved {
 			break
 		}
 
-		data = data[n:]
+		if n==0 {
+			continue
+		}
+
+		if e.Block==nil {
+			if ctype != BTHole {
+				break
+			}
+		} else if (e.Type() != ctype) {
+			break
+		}
+	}
+
+//	fmt.Printf("Read: got %d bytes type %x\n", count, ctype)
+	return count, nil, ctype
+}
+
+func Dump(root uint64) (string, error) {
+	s := fmt.Sprintf("Dump file %d:\n", root)
+	bp, err := find(root, 0)
+	if err!=nil {
+		s = fmt.Sprintf("%s\tError: %s\n", s, err)
+		return s, err
+	}
+
+	offset := uint64(0)
+	for {
+		e := &bp.entries[0]
+		n := e.end - e.start - uint64(e.pos)
+		if e.Block == nil {
+			s = fmt.Sprintf("%s\t%06d hole %d\n", s, offset, n)
+		} else {
+			s = fmt.Sprintf("%s\t%06d data %d\n", s, offset, n)
+		}
+
+		offset += n
 		moved, err := bp.next(0)
 		if err!=nil {
-			return 0, err
+			s = fmt.Sprintf("%s\tError: %s\n", s, err)
+			return s, err
 		}
 
 		if !moved {
@@ -907,8 +947,8 @@ func Read(root, offset uint64, data []byte) (int, error) {
 		}
 	}
 
-//	fmt.Printf("Read: got %d bytes\n", count)
-	return count, nil
+	s = fmt.Sprintf("%s\t%06d EOF\n", s, offset)
+	return s, nil
 }
 
 type btdata int

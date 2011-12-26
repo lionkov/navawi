@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"go9p.googlecode.com/hg/p"
-	"go9p.googlecode.com/hg/p/srv"
+        "code.google.com/p/go9p/p"
+        "code.google.com/p/go9p/p/srv"
 	"log"
 	"syscall"
 )

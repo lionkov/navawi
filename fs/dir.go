@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"go9p.googlecode.com/hg/p"
+        "code.google.com/p/go9p/p"
 	"gostor"
 	"io"
 	"os"
@@ -58,7 +58,7 @@ func readUntilStart(dir, offset uint64, buf []byte) ([]byte, error) {
 			buf = tbuf
 		}
 
-		n, err := gostor.Read(dir, offset+uint64(pos), buf[pos:])
+		n, err, _ := gostor.Read(dir, offset+uint64(pos), buf[pos:])
 		if err != nil {
 			return nil, err
 		}
@@ -91,7 +91,7 @@ func readBackUntilStart(dir, offset uint64, buf []byte) (uint64, []byte, error) 
 			copy(tbuf[size:], buf)
 		}
 
-		n, err := gostor.Read(dir, offset-uint64(size), buf[0:size])
+		n, err, _ := gostor.Read(dir, offset-uint64(size), buf[0:size])
 		if err != nil {
 			return 0, nil, err
 		}
@@ -130,7 +130,7 @@ func findEntry(dir, offset uint64) (uint64, []byte, error) {
 			buf = tbuf
 		}
 
-		n, err := gostor.Read(dir, offset+uint64(pos), buf[pos:])
+		n, err, _ := gostor.Read(dir, offset+uint64(pos), buf[pos:])
 		if err != nil {
 			return 0, nil, err
 		}
@@ -159,7 +159,7 @@ L:
 		tbuf := make([]byte, len(buf)+size)
 		copy(tbuf[size:], buf)
 		buf = tbuf
-		n, err := gostor.Read(dir, offset-uint64(size), buf[0:size])
+		n, err, _ := gostor.Read(dir, offset-uint64(size), buf[0:size])
 		if err != nil {
 			return 0, nil, err
 		}

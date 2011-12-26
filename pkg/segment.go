@@ -318,6 +318,7 @@ func (sm *SegmentManager) nextSegment() error {
 
 	sm.seg = nil
 	if s.next == ^uint64(0) {
+		fmt.Printf("** storage full\n")
 		return errors.New("storage full")
 	}
 
@@ -348,6 +349,7 @@ func (sm *SegmentManager) CommitFragment(frag *Fragment, datasz uint32) error {
 	p = pint32(SGUnsealed, frag.raw[frag.size:])
 	_ = pint32(0, p)
 
+	fmt.Printf("WriteAt len %d offset %d\n", len(frag.raw), frag.offset)
 	_, err = sm.disk.WriteAt(frag.raw, int64(frag.offset))
 	sm.Lock()
 	sm.seg.frag = nil

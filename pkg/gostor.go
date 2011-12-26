@@ -2,7 +2,7 @@ package gostor
 
 import (
 	"errors"
-	"fmt"
+//	"fmt"
 	"os"
 )
 
@@ -91,7 +91,7 @@ func Sync(root uint64) error {
 // Forget the file with ID root. If the file is not referenced by other files
 // it will be garbage collected (eventually)
 func Forget(root uint64) error {
-	fmt.Printf("Forget %d\n", root)
+//	fmt.Printf("Forget %d\n", root)
 	b, err := bc.Get(root)
 	if err!=nil {
 		return err
@@ -143,13 +143,13 @@ func Size(root uint64) (uint64, error) {
 		sz = uint64(len(b.Data))
 	} else {
 		nent := len(b.Data)/BTEntrySize
-		fmt.Printf("Size: nent %d %v\n", nent, b.Data)
+//		fmt.Printf("Size: nent %d %v\n", nent, b.Data)
 		for i:=0; i<nent; i++ {
 			n, _ := gint64(b.Data[i*BTEntrySize+8:])
 			sz += n
 		}
 	}
 
-	fmt.Printf("Size %d %d\n", root, sz)
+//	fmt.Printf("Size %d %d\n", root, sz)
 	return sz, nil
 }

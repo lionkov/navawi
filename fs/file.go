@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"go9p.googlecode.com/hg/p"
+        "code.google.com/p/go9p/p"
 	"gostor"
 	"os"
 	"sync"
@@ -171,7 +171,7 @@ func (f *File) Read(offset uint64, buf []byte) (int, error) {
 	root := f.Root
 	f.Unlock()
 
-	count, err := gostor.Read(root, offset, buf)
+	count, err, _ := gostor.Read(root, offset, buf)
 	fmt.Printf("File.Read count %d error %v\n", count, err)
 	return count, err
 }

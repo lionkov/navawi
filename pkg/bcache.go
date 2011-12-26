@@ -16,7 +16,8 @@ const (
 const (	// Predefined Block Types
 	BTRoot		= 0x8000
 	BTData		= 0x0000	// data, no block references
-	BTUnknown	= 0x7FFF	// unknown type
+	BTUnknown	= 0x7F7F	// unknown type
+	BTHole		= 0x7FFF	// not saved on disk
 
 	// b-tree nodes
 	BTNode1		= 0x28b1	// level 1 (children are leafs)
@@ -75,6 +76,7 @@ type BlockCache struct {
 	// uncommitted blocks
 	ucoffset	uint64	// next odd integer to use as id for uncommitted blocks
 	coffset		uint64	// (fake/odd) offset of the last uncommitted block that was committed
+	ocoffset	uint64	// oldest fake offset that might be present in an uncommitted block content
 	ucfirst, uclast	*Block
 	ucsize		uint32	// size of the uncommitted data
 	liveblocks	map[uint64] *Block
@@ -228,8 +230,11 @@ func (bc *BlockCache) Get(offset uint64) (*Block, error) {
 		// 1. no reading from the disk
 		// 2. not in the lru list
 		if b==nil {
-			fmt.Printf("**** uncommitted block %d not found", offset)
+			fmt.Printf("**** uncommitted block %d not found\n", offset)
 			err = errors.New(fmt.Sprintf("uncommitted block %d not found", offset))
+
+			var s *string
+			*s = "boo"
 		}
 
 		bc.Unlock()
@@ -377,7 +382,10 @@ func (bc *BlockCache) Commit(b *Block) error {
 func (bc *BlockCache) checkCommit() {
 	if bc.ucsize > bc.maxucsize {
 		// force commit
-		bc.commitchan <- nil
+		select {
+		default:
+		case bc.commitchan <- nil:
+		}
 	}
 }
 
@@ -395,11 +403,12 @@ func (bc *BlockCache) gc() {
 		if b.color == CBlack {
 			// not referenced
 
+			fmt.Printf("remove garbage from cache block %d %p prev %p next %p ucfirst %p uclast %p\n", b.Offset, b, b.ucprev, b.ucnext, bc.ucfirst, bc.uclast)
 			// remove from the list of uncommitted blocks
 			if b.ucnext!=nil {
 				b.ucnext.ucprev = b.ucprev
 			} else {
-				bc.uclast = b
+				bc.uclast = b.ucprev
 			}
 
 			if b.ucprev!=nil {
@@ -409,7 +418,6 @@ func (bc *BlockCache) gc() {
 			}
 
 			// remove from the cache
-//			fmt.Printf("remove from cache block %d\n", b.Offset)
 			delete(bc.cache, b.Offset)
 
 			bc.ucsize -= uint32(b.Length + b.Length%2 + BTHeaderSize)
@@ -477,8 +485,7 @@ func (bc *BlockCache) commit() error {
 //	fmt.Printf("BlockCache.commit frag size %v len(Data) %v\n", frag.size, len(frag.Data))
 	offset := frag.DataOffset
 	count := uint32(len(frag.Data))
-	c0 := bc.coffset
-	c1 := c0
+	c1 := bc.ocoffset
 	n := uint32(0)
 	sb := bc.ucfirst
 	for b = sb; b!=nil && n<count ; b = b.ucnext {
@@ -496,7 +503,7 @@ func (bc *BlockCache) commit() error {
 		bc.cache[b.Offset] = b
 		offset += uint64(m) + BTHeaderSize
 		n += m + BTHeaderSize
-		c0 = b.coffset
+		c1 = b.coffset
 
 		// add to the LRU list
 		bc.makeSpace()
@@ -542,13 +549,14 @@ func (bc *BlockCache) commit() error {
 
 	// remove uncommitted blocks with odd offsets from the cache
 	bc.Lock()
-	for c0 < c1 {
-		if bc.liveblocks[c0]==nil {
+	fmt.Printf("BlockCache.commit remove blocks from %d to %d\n", bc.ocoffset, c1)
+	for bc.ocoffset < c1 {
+		if bc.liveblocks[bc.ocoffset]==nil {
 //			fmt.Printf("BlockCache.commit remove block %d from cache\n", c0)
-			delete(bc.cache, c0)
+			delete(bc.cache, bc.ocoffset)
 		}
 
-		c0 += 2
+		bc.ocoffset += 2
 	}
 	bc.Unlock()
 
@@ -585,7 +593,7 @@ func (bc *BlockCache) AddLiveBlock(b *Block) {
 }
 
 func (bc *BlockCache) RemoveLiveBlock(b *Block) {
-//	fmt.Printf("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
+	fmt.Printf("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
 	bc.Lock()
 	delete(bc.liveblocks, b.Offset)
 	if b.ucid==0 {

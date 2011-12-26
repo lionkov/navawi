@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"go9p.googlecode.com/hg/p"
+        "code.google.com/p/go9p/p"
 	"gostor"
 	"sync"
 	"sync/atomic"
@@ -41,7 +41,7 @@ func ReadSuper() error {
 	}
 
 	buf := make([]byte, super.blocksz)
-	_, err = gostor.Read(super.id, 0, buf)
+	_, err, _ = gostor.Read(super.id, 0, buf)
 	if err != nil {
 		return err
 	}
