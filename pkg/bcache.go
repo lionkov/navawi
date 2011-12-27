@@ -403,7 +403,7 @@ func (bc *BlockCache) gc() {
 		if b.color == CBlack {
 			// not referenced
 
-			fmt.Printf("remove garbage from cache block %d %p prev %p next %p ucfirst %p uclast %p\n", b.Offset, b, b.ucprev, b.ucnext, bc.ucfirst, bc.uclast)
+//			fmt.Printf("remove garbage from cache block %d %p prev %p next %p ucfirst %p uclast %p\n", b.Offset, b, b.ucprev, b.ucnext, bc.ucfirst, bc.uclast)
 			// remove from the list of uncommitted blocks
 			if b.ucnext!=nil {
 				b.ucnext.ucprev = b.ucprev
@@ -495,8 +495,7 @@ func (bc *BlockCache) commit() error {
 			break
 		}
 
-//		fmt.Printf("BlockCache.commit block %p offset %v type %v length %v\n", b, offset, b.blktype, b.Length)
-		fmt.Printf("BlockCache.commit %d --> %d\n", b.Offset, offset)
+//		fmt.Printf("BlockCache.commit %d --> %d\n", b.Offset, offset)
 		bc.coffset = b.Offset
 		b.ucid = b.Offset
 		b.Offset = offset
@@ -515,7 +514,8 @@ func (bc *BlockCache) commit() error {
 	}
 
 	if b!=nil {
-		bc.ucfirst = b.ucnext
+		b.ucprev = nil
+		bc.ucfirst = b
 	} else {
 		bc.ucfirst = nil
 	}
@@ -549,7 +549,7 @@ func (bc *BlockCache) commit() error {
 
 	// remove uncommitted blocks with odd offsets from the cache
 	bc.Lock()
-	fmt.Printf("BlockCache.commit remove blocks from %d to %d\n", bc.ocoffset, c1)
+//	fmt.Printf("BlockCache.commit remove blocks from %d to %d\n", bc.ocoffset, c1)
 	for bc.ocoffset < c1 {
 		if bc.liveblocks[bc.ocoffset]==nil {
 //			fmt.Printf("BlockCache.commit remove block %d from cache\n", c0)
@@ -593,7 +593,7 @@ func (bc *BlockCache) AddLiveBlock(b *Block) {
 }
 
 func (bc *BlockCache) RemoveLiveBlock(b *Block) {
-	fmt.Printf("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
+//	fmt.Printf("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
 	bc.Lock()
 	delete(bc.liveblocks, b.Offset)
 	if b.ucid==0 {
