@@ -85,7 +85,7 @@ func FindActiveSegment(dc *DiskCache) (offset uint64, err error) {
 		var next uint64
 
 		// header
-//		fmt.Printf("FindActiveSegment offset %v\n", offset)
+//		debug("FindActiveSegment offset %v\n", offset)
 		hdr, err = dc.Read(offset, SGHeaderSize)
 		if err != nil {
 			return 0, err
@@ -100,14 +100,14 @@ func FindActiveSegment(dc *DiskCache) (offset uint64, err error) {
 		_, p = gint64(p)
 		next, p = gint64(p)
 
-//		fmt.Printf("FindActiveSegment offset %v size %v next %v ^0 %v\n", offset, size, next, ^uint64(0))
+//		debug("FindActiveSegment offset %v size %v next %v ^0 %v\n", offset, size, next, ^uint64(0))
 		// trailer
 		tr, err = dc.Read(offset+uint64(size) - SGTrailerSize, SGTrailerSize)
 		if err != nil {
 			return 0, err
 		}
 
-//		fmt.Printf("FindActiveSegment offset %x data %v\n", offset+uint64(size) - SGTrailerSize, tr)
+//		debug("FindActiveSegment offset %x data %v\n", offset+uint64(size) - SGTrailerSize, tr)
 		tmagic, p = gint32(tr)
 		if tmagic==SGUnsealed {
 			break
@@ -119,7 +119,7 @@ func FindActiveSegment(dc *DiskCache) (offset uint64, err error) {
 		}
 	}
 
-//	fmt.Printf("active segment: %v\n", offset)
+//	debug("active segment: %v\n", offset)
 	return offset, nil		
 }
 
@@ -127,7 +127,7 @@ func FormatSegment(disk *os.File, offset uint64, size uint32, prev, next uint64)
 	b := make([]byte, SGHeaderSize + SGTrailerSize)
 
 	// segment header
-//	fmt.Printf("FormatSegment offset %v size %v prev %v next %v\n", offset, size, prev, next)
+//	debug("FormatSegment offset %v size %v prev %v next %v\n", offset, size, prev, next)
 	p := pint32(SGHMagic, b)
 	p = pint32(size, p)
 	p = pint64(prev, p)
@@ -167,12 +167,12 @@ func FormatDisk(disk *os.File, disksz uint64, segsz uint32) error {
 		segnum++
 	}
 
-//	fmt.Printf("Formatted %d segments\n", segnum)
+//	debug("Formatted %d segments\n", segnum)
 	return nil
 }
 
 func ReadSegment(dc *DiskCache, offset uint64) (*Segment, error) {
-//	fmt.Printf("ReadSegment offset %v\n", offset)
+//	debug("ReadSegment offset %v\n", offset)
 	b, err := dc.Read(offset, SGHeaderSize + FGHeaderSize)
 	if err!=nil {
 		return nil, err
@@ -254,7 +254,7 @@ func (s *Segment) isFull() bool {
 }
 
 func (sm *SegmentManager) AllocFragment(minsz, datasz uint32) (*Fragment, error) {
-//	fmt.Printf("SegmentManager.AllocFragment minsz %d datasz %d\n", minsz, datasz)
+//	debug("SegmentManager.AllocFragment minsz %d datasz %d\n", minsz, datasz)
 	// add the space for the header
 	minsz += FGHeaderSize
 	datasz += FGHeaderSize
@@ -293,7 +293,7 @@ again:
 	frag.size = datasz
 	frag.raw = make([]byte, datasz + SGTrailerSize)
 	frag.Data = frag.raw[FGHeaderSize:datasz]
-//	fmt.Printf("SegmentManager.AllocFragment datasz %d len(Data) %d\n", datasz, len(frag.Data))
+//	debug("SegmentManager.AllocFragment datasz %d len(Data) %d\n", datasz, len(frag.Data))
 	return frag, nil
 }
 
@@ -318,7 +318,7 @@ func (sm *SegmentManager) nextSegment() error {
 
 	sm.seg = nil
 	if s.next == ^uint64(0) {
-		fmt.Printf("** storage full\n")
+		debug("** storage full\n")
 		return errors.New("storage full")
 	}
 
@@ -334,7 +334,7 @@ func (sm *SegmentManager) CommitFragment(frag *Fragment, datasz uint32) error {
 		return errors.New(fmt.Sprintf("data size exceeds initial allocation allocated %d requested %d", frag.size, datasz))
 	}
 
-//	fmt.Printf("SegmentManager.CommitFragment: %v\n", frag.raw[0:datasz])
+//	debug("SegmentManager.CommitFragment: %v\n", frag.raw[0:datasz])
 	frag.size = datasz
 	frag.raw = frag.raw[0:datasz+SGTrailerSize]
 
@@ -349,7 +349,7 @@ func (sm *SegmentManager) CommitFragment(frag *Fragment, datasz uint32) error {
 	p = pint32(SGUnsealed, frag.raw[frag.size:])
 	_ = pint32(0, p)
 
-	fmt.Printf("WriteAt len %d offset %d\n", len(frag.raw), frag.offset)
+	debug("WriteAt len %d offset %d\n", len(frag.raw), frag.offset)
 	_, err = sm.disk.WriteAt(frag.raw, int64(frag.offset))
 	sm.Lock()
 	sm.seg.frag = nil
@@ -367,12 +367,12 @@ func fragmentFindBlock(btype uint16, buf []byte, offset uint64) (root uint64, er
 
 		sz, p := gint16(buf[4:])
 		if sz==0 {
-			fmt.Printf("fragmentFindBlock: sz 0 buf %v\n", buf)
+			debug("fragmentFindBlock: sz 0 buf %v\n", buf)
 			break
 		}
 
 		bt, _ := gint16(p)
-		fmt.Printf("fragmentFindBlock: offset %d sz %d type %x looking for %x\n", offset, sz, bt, btype)
+		debug("fragmentFindBlock: offset %d sz %d type %x looking for %x\n", offset, sz, bt, btype)
 		if bt==btype {
 			root = offset
 		}
@@ -381,10 +381,10 @@ func fragmentFindBlock(btype uint16, buf []byte, offset uint64) (root uint64, er
 		
 		buf = buf[sz:]
 		offset += uint64(sz)
-		fmt.Printf("fragmentFindBlock: remaining %d\n", len(buf))
+		debug("fragmentFindBlock: remaining %d\n", len(buf))
 	}
 
-//	fmt.Printf("block root %d\n", root)
+//	debug("block root %d\n", root)
 	return
 }
 
@@ -392,7 +392,7 @@ func (s *Segment) findBlock(btype uint16) (root uint64, err error) {
 	var buf []byte
 	var fr uint64
 
-	fmt.Printf("Segment.findBlock: segment size %d\n", s.size)
+	debug("Segment.findBlock: segment size %d\n", s.size)
 	for offset:=uint64(SGHeaderSize); offset<uint64(s.size); {
 		buf, err = sm.dc.Read(offset, FGHeaderSize)
 		if err!=nil {
@@ -413,7 +413,7 @@ func (s *Segment) findBlock(btype uint16) (root uint64, err error) {
 			break
 		}
 
-		fmt.Printf("Segment.findBlock: fragment size %d header %v\n", sz, buf)
+		debug("Segment.findBlock: fragment size %d header %v\n", sz, buf)
 		buf, err = sm.dc.Read(offset+FGHeaderSize, sz-FGHeaderSize)
 		if err!=nil {
 			return
@@ -458,7 +458,7 @@ func (sm *SegmentManager) FindBlock(btype uint16) (root uint64, err error) {
 	}
 
 	if err!=nil {
-		fmt.Printf("SegmentManager.FindBlock err %s\n", err)
+		debug("SegmentManager.FindBlock err %s\n", err)
 	}
 
 	return

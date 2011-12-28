@@ -36,7 +36,7 @@ func search(base uint64, offset uint64, data []byte) (pos int, start, end uint64
 		sz, _ := gint64(data[pos*BTEntrySize+8:])
 		end = start + sz
 		if offset <= end {
-//			fmt.Printf("search: offset %d pos %d start %d end %d\n", offset, pos, start, end)
+//			debug("search: offset %d pos %d start %d end %d\n", offset, pos, start, end)
 			return
 		}
 
@@ -46,7 +46,7 @@ func search(base uint64, offset uint64, data []byte) (pos int, start, end uint64
 	// last element
 	sz, _ := gint64(data[pos*BTEntrySize+8:])
 	end = start + sz
-//	fmt.Printf("search: offset %d pos %d start %d end %d\n", offset, pos, start, end)
+//	debug("search: offset %d pos %d start %d end %d\n", offset, pos, start, end)
 	return
 }
 
@@ -72,15 +72,15 @@ func find(root uint64, offset uint64) (bp *BTPath, err error) {
 		return nil, errors.New("not root")
 	}
 
-//	fmt.Printf("Root level %d %v\n", b.Level(), b.Data)
+//	debug("Root level %d %v\n", b.Level(), b.Data)
 	start := uint64(0)
 	bp.levels = b.Level() + 1
-//	fmt.Printf("levels: %v\n", bp.levels)
+//	debug("levels: %v\n", bp.levels)
 	for l := bp.levels - 1; l >= 0; l-- {
 		e := &bp.entries[l]
 		e.Block = b
 		if l==0 {
-//			fmt.Printf("levels ------------------ %d\n", bp.levels)
+//			debug("levels ------------------ %d\n", bp.levels)
 			if bp.levels>1 {
 				e.start = bp.entries[l+1].start
 			} else {
@@ -99,16 +99,16 @@ func find(root uint64, offset uint64) (bp *BTPath, err error) {
 			}
 
 //			if e.Block!=nil {
-//				fmt.Printf("********** pos %d len %d start %d end %d offset %d\n", e.pos, len(e.Data), e.start, e.end, offset)
+//				debug("********** pos %d len %d start %d end %d offset %d\n", e.pos, len(e.Data), e.start, e.end, offset)
 //			} else {
-//				fmt.Printf("********** hole pos %d start %d end %d offset %d\n", e.pos, e.start, e.end, offset)
+//				debug("********** hole pos %d start %d end %d offset %d\n", e.pos, e.start, e.end, offset)
 //			}
 			break
 		}
 
 		e.entnum = len(b.Data) / BTEntrySize
 		pos, start, end = search(start, offset, b.Data)
-//		fmt.Printf("find: level %d pos %d start %d end %d\n", l, pos, start, end)
+//		debug("find: level %d pos %d start %d end %d\n", l, pos, start, end)
 		e.pos = uint64(pos)
 		e.start = start
 		e.end = end
@@ -158,9 +158,10 @@ func (bp *BTPath) next(level int) (bool, error) {
 
 	e := &bp.entries[l]
 	e.pos++
+//	debug("BTPath.next l %d e.pos %d e.entnum %d len %d\n", l, e.pos, e.entnum, len(e.Data))
 	blk, p := gint64(e.Data[e.pos*BTEntrySize:])
 	sz, _ := gint64(p)
-//	fmt.Printf("BTPath.next blk %v sz %v\n", blk, sz)
+//	debug("BTPath.next blk %v sz %v\n", blk, sz)
 	e.start += e.end
 	e.end += e.start + sz
 	for ; l > level; l-- {
@@ -181,6 +182,7 @@ func (bp *BTPath) next(level int) (bool, error) {
 			e.start = e.end
 			e.end = e.start + sz
 			e.pos = 0
+			e.entnum = len(b.Data) / BTEntrySize
 			if l>1 {
 				blk, p = gint64(b.Data)
 				sz, _ = gint64(p)
@@ -189,7 +191,7 @@ func (bp *BTPath) next(level int) (bool, error) {
 			e.Block = b
 		}
 
-//		fmt.Printf("BTPath.next level %d start %v end %v\n", l - 1, e.start, e.end)
+//		debug("BTPath.next level %d start %v end %v\n", l - 1, e.start, e.end)
 	}
 
 	return true, nil
@@ -216,7 +218,7 @@ func (bp *BTPath) nextSize(level int) (int, error) {
 	e := &bp.entries[l]
 	blk, p := gint64(e.Data[(e.pos+1)*BTEntrySize:])
 	sz, _ := gint64(p)
-//	fmt.Printf("nextSize: level %d pos %d entnum %d sz %d\n", l, e.pos, e.entnum, sz)
+//	debug("nextSize: level %d pos %d entnum %d sz %d\n", l, e.pos, e.entnum, sz)
 
 	for ; l>level; l-- {
 		if blk==0 {
@@ -226,7 +228,7 @@ func (bp *BTPath) nextSize(level int) (int, error) {
 
 		b, err := bc.Get(blk)
 		if err!=nil {
-//			fmt.Printf("nextSize: error %v\n", err)
+//			debug("nextSize: error %v\n", err)
 			return 0, err
 		}
 
@@ -248,7 +250,7 @@ func (bp *BTPath) prev(level int) (bool, error) {
 
 	// find the first useful entry
 	for l = level + 1; l < bp.levels; l++ {
-//		fmt.Printf("prev: finding the first useful entry l %d pos %d\n", l, bp.entries[l].pos)
+//		debug("prev: finding the first useful entry l %d pos %d\n", l, bp.entries[l].pos)
 		if bp.entries[l].pos>0 {
 			break
 		}
@@ -256,7 +258,7 @@ func (bp *BTPath) prev(level int) (bool, error) {
 
 	if l >= bp.levels {
 		// beginning of the file
-//		fmt.Printf("prev: 1 pos %d\n", bp.entries[level].pos)
+//		debug("prev: 1 pos %d\n", bp.entries[level].pos)
 		return false, nil
 	}
 
@@ -266,7 +268,7 @@ func (bp *BTPath) prev(level int) (bool, error) {
 	sz, _ := gint64(p)
 	e.start -= sz
 	e.end -= sz
-//	fmt.Printf("prev: l %d bp.levels %d pos %d blk %d sz %d\n", l, bp.levels, e.pos, blk, sz)
+//	debug("prev: l %d bp.levels %d pos %d blk %d sz %d\n", l, bp.levels, e.pos, blk, sz)
 
 	for ; l > level; l-- {
 		e := &bp.entries[l - 1]
@@ -298,10 +300,10 @@ func (bp *BTPath) prev(level int) (bool, error) {
 			}
 		}
 
-//		fmt.Printf("prev: level %d old pos %d pos %d\n", l - 1, opos, e.pos)
+//		debug("prev: level %d old pos %d pos %d\n", l - 1, opos, e.pos)
 	}
 
-//	fmt.Printf("prev: 2 pos %d\n", bp.entries[level].pos)
+//	debug("prev: 2 pos %d\n", bp.entries[level].pos)
 	return true, nil
 }
 
@@ -310,7 +312,7 @@ func (bp *BTPath) prev(level int) (bool, error) {
 func (bp *BTPath) prevSize(level int) (int, error) {
 	var l int
 
-//	fmt.Printf("prevSize: level %d\n", level)
+//	debug("prevSize: level %d\n", level)
 	// find the first useful entry
 	for l = level + 1; l < bp.levels; l++ {
 		if bp.entries[l].pos>0 {
@@ -320,7 +322,7 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 
 	if l >= bp.levels {
 		// beginning of the file
-//		fmt.Printf("prevSize: beginning of file\n")
+//		debug("prevSize: beginning of file\n")
 		return 0, nil
 	}
 
@@ -328,7 +330,7 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 	pos := e.pos - 1
 	blk, p := gint64(e.Data[pos*BTEntrySize:])
 	sz, _ := gint64(p)
-//	fmt.Printf("prevSize: l %d bp.levels %d pos %d blk %d sz %d\n", l, bp.levels, pos, blk, sz)
+//	debug("prevSize: l %d bp.levels %d pos %d blk %d sz %d\n", l, bp.levels, pos, blk, sz)
 	for ; l > level; l-- {
 		if blk==0 {
 			// hole
@@ -337,7 +339,7 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 
 		b, err := bc.Get(blk)
 		if err!=nil {
-//			fmt.Printf("prevSize: error %v\n", err)
+//			debug("prevSize: error %v\n", err)
 			return 0, err
 		}
 
@@ -350,13 +352,13 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 		bc.Release(b)
 	}
 
-//	fmt.Printf("prevSize blk %d\n", blk)
+//	debug("prevSize blk %d\n", blk)
 	return int(sz), nil
 }
 
 func (bp *BTPath) isStartOfFile(level int) bool {
 	for level++; level < bp.levels; level++ {
-//		fmt.Printf("isStartOfFile level %d pos %d start %d end %d\n", level, bp.entries[level].pos, bp.entries[level].start, bp.entries[level].end)
+//		debug("isStartOfFile level %d pos %d start %d end %d\n", level, bp.entries[level].pos, bp.entries[level].start, bp.entries[level].end)
 		if bp.entries[level].pos != 0 {
 			return false
 		}
@@ -367,14 +369,14 @@ func (bp *BTPath) isStartOfFile(level int) bool {
 
 func (bp *BTPath) isEndOfFile(level int) bool {
 	if level==0 {
-//		fmt.Printf("isEndOfFile level %d pos %d start %d end %d\n", level, bp.entries[level].pos, bp.entries[level].start, bp.entries[level].end)
+//		debug("isEndOfFile level %d pos %d start %d end %d\n", level, bp.entries[level].pos, bp.entries[level].start, bp.entries[level].end)
 		if bp.entries[0].pos < bp.entries[0].end - bp.entries[0].start {
 			return false
 		}
 	}
 
 	for level++; level < bp.levels; level++ {
-//		fmt.Printf("isEndOfFile level %d pos %d start %d end %d\n", level, bp.entries[level].pos, bp.entries[level].start, bp.entries[level].end)
+//		debug("isEndOfFile level %d pos %d start %d end %d\n", level, bp.entries[level].pos, bp.entries[level].start, bp.entries[level].end)
 		if bp.entries[level].pos < bp.entries[level].end {
 			return false
 		}
@@ -417,7 +419,7 @@ func (bp *BTPath) seek(offset uint64) error {
 		}
 	}
 
-//	fmt.Printf("BTPath.seek l %v bp.levels %v\n", l, bp.levels)
+//	debug("BTPath.seek l %v bp.levels %v\n", l, bp.levels)
 	base := uint64(0)
 	if l < bp.levels {
 		base = bp.entries[l].start
@@ -430,7 +432,7 @@ func (bp *BTPath) seek(offset uint64) error {
 		e = &bp.entries[l]
 		e.Block = b
 		if l==0 {
-//			fmt.Printf("BTPath.seek l 0 start %d pos %d\n", e.start, e.pos)
+//			debug("BTPath.seek l 0 start %d pos %d\n", e.start, e.pos)
 			if bp.levels>0 {
 				e.start = bp.entries[l+1].start
 				e.end = bp.entries[l+1].end
@@ -446,10 +448,10 @@ func (bp *BTPath) seek(offset uint64) error {
 			e.pos = offset - e.start
 //			if e.Block!=nil {
 //				if e.pos > uint64(len(e.Data)) {
-//					fmt.Printf("######## pos %d len %d start %d end %d offset %d\n", e.pos, len(e.Data), e.start, e.end, offset)
+//					debug("######## pos %d len %d start %d end %d offset %d\n", e.pos, len(e.Data), e.start, e.end, offset)
 //				}
 //			} else {
-//				fmt.Printf("######## hole pos %d start %d end %d offset %d\n", e.pos, e.start, e.end, offset)
+//				debug("######## hole pos %d start %d end %d offset %d\n", e.pos, e.start, e.end, offset)
 //			}
 
 			break
@@ -463,7 +465,7 @@ func (bp *BTPath) seek(offset uint64) error {
 
 		e.entnum = len(b.Data) / BTEntrySize
 		pos, base, end = search(base, offset, e.Data)
-//		fmt.Printf("BTPath.seek pos %d base %d end %d\n", pos, base, end)
+//		debug("BTPath.seek pos %d base %d end %d\n", pos, base, end)
 		e.pos = uint64(pos)
 		e.start = base
 		e.end = end
@@ -507,19 +509,19 @@ func blockSize(b *Block) uint64 {
 	for p:=b.Data; len(p) >= BTEntrySize; {
 		var sz uint64
 
-//		fmt.Printf("blockSize: len(p) %d\n", len(p))
+//		debug("blockSize: len(p) %d\n", len(p))
 		p = p[8:]		// skip block address
 		sz, p = gint64(p)
 		total += sz
 	}
 
-//	fmt.Printf("blockSize: %d %d %v\n", b.Offset, total, b.Data)
+//	debug("blockSize: %d %d %v\n", b.Offset, total, b.Data)
 	return total
 }
 
 // copy data from the multiple []byte slices to a list of blocks of type ctype
 func copyToBlocks(ds [][]byte, datasz int, ctype uint16, maxblksz int) []*Block {
-//	fmt.Printf("copyToBlocks ds %v datasz %d\n", ds, datasz)
+//	debug("copyToBlocks ds %v datasz %d\n", ds, datasz)
 	bnum := datasz / maxblksz
 	if datasz%maxblksz != 0 {
 		bnum++
@@ -582,7 +584,8 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	var newblocks []*Block
 	var rootblk *Block
 
-//	fmt.Printf("Write root %v start %v end %v count %d\n", root, start, end, count)
+
+	debug("Write root %v start %v end %v count %d\n", root, start, end, count)
 	sbp, err := find(root, start)
 	if err != nil {
 		return 0, err
@@ -596,8 +599,8 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		return 0, err
 	}
 
-//	fmt.Printf("** sbp %v\n", sbp)
-//	fmt.Printf("** ebp %v\n", ebp)
+	debug("** sbp %v\n", sbp)
+	debug("** ebp %v\n", ebp)
 	datalen := 0
 	if data!=nil {
 		datalen = len(data)
@@ -611,50 +614,41 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	lholesz := uint64(0)
 	if sbp.entries[0].end < start {
 		// if the start is past end of file, put hole on the left
-//		fmt.Printf("Write: past end of file: start %d end %d start %d\n", sbp.entries[0].start, sbp.entries[0].end, start)
+		debug("Write: past end of file: start %d end %d start %d\n", sbp.entries[0].start, sbp.entries[0].end, start)
 		lholesz = start - sbp.entries[0].end
 		start = sbp.entries[0].end
-//		_, err = sbp.prev(0)
-//		if err!=nil {
-//			sbp.Release()
-//			ebp.Release()
-//			return 0, err
-//		}
 	}
 
 	if sbp.entries[0].Block == nil {
 		// if the start is within a hole, recalculate the hole size
-//		fmt.Printf("Write: start within a hole start %d pos %d\n", sbp.entries[0].start, sbp.entries[0].pos)
+		debug("Write: start within a hole start %d pos %d\n", sbp.entries[0].start, sbp.entries[0].pos)
 		lholesz += start - sbp.entries[0].start
 		sbp.entries[0].pos = 0
 	}
 
 	if ebp.entries[0].Block == nil && ebp.entries[0].end > end {
 		// if the end is within a hole, recalculate the hole size
-//		fmt.Printf("Write: end within a hole end %d pos %d\n", ebp.entries[0].end, ebp.entries[0].pos)
+		debug("Write: end within a hole end %d pos %d\n", ebp.entries[0].end, ebp.entries[0].pos)
 		rholesz += ebp.entries[0].end - end
 		ebp.entries[0].pos = ebp.entries[0].end - ebp.entries[0].start
 	}
 
 	// if we are inserting a hole, merge lhole, hole and rhole
-//	fmt.Printf("first lholesz %v rholesz %v\n", lholesz, rholesz)
+	debug("first lholesz %v rholesz %v\n", lholesz, rholesz)
 	if data==nil {
 		lholesz += rholesz
 		count = 0
 		rholesz = 0
 	}
 
-//	fmt.Printf("second lholesz %v rholesz %v\n", lholesz, rholesz)
+	debug("second lholesz %v rholesz %v\n", lholesz, rholesz)
 	maxblksz := Conf.Maxdatablocksz
 	for l = 0; l < BTMaxLevels; l++ {
-//		fmt.Printf("Level %d -----------\n", l)
-//		fmt.Printf("sbp %v\n", sbp)
-//		fmt.Printf("ebp %v\n", ebp)
+		debug("Level %d -----------\n", l)
+		debug("sbp %v\n", sbp)
+		debug("ebp %v\n", ebp)
 		se := &sbp.entries[l]
 		ee := &ebp.entries[l]
-
-//		fmt.Printf("  sbp.start %v sbp.end %v sbp.pos %v\n", se.start, se.end, se.pos)
-//		fmt.Printf("  ebp.start %v ebp.end %v ebp.pos %v\n", ee.start, ee.end, ee.pos)
 
 		// calculate the total size of the data that will need new entries
 		// this includes:
@@ -672,14 +666,14 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 		lbuf := []byte(nil)
 		if se.Block != nil && se.pos > 0 {
-//			fmt.Printf("partially overwritten at the beginning: level %d len(e.Data) %d e.start %v e.end %v pos %v\n", l, len(se.Data), se.start, se.end, se.pos)
+			debug("partially overwritten at the beginning: level %d len(e.Data) %d e.start %v e.end %v pos %v\n", l, len(se.Data), se.start, se.end, se.pos)
 			if l==0 {
 				lbuf = se.Data[0:se.pos]
 			} else if se.pos > 0 {
 				lbuf = se.Data[0:se.pos*BTEntrySize]
 			}
 		}
-//		fmt.Printf("lbuf %v\n", lbuf)
+		debug("lbuf %v\n", lbuf)
 
 		// if no hole on the left, combine the left fragment with the data
 		if lholesz==0 && se.Block!=nil && ctype==se.Type() {
@@ -690,7 +684,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 		rbuf := []byte(nil)
 		if ee.Block != nil {
-//			fmt.Printf("partially overwritten at the end: len(e.Data) %d e.start %v e.end %v end %v pos %v\n", len(ee.Data), ee.start, ee.end, end, ee.pos)
+			debug("partially overwritten at the end: len(e.Data) %d e.start %v e.end %v end %v pos %v\n", len(ee.Data), ee.start, ee.end, end, ee.pos)
 			if l==0 {
 				if ee.pos < uint64(len(ee.Data)) {
 					rbuf = ee.Data[ee.pos:]
@@ -702,13 +696,13 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 				}
 			}
 		}
-//		fmt.Printf("rbuf %v\n", rbuf)
+		debug("rbuf %v\n", rbuf)
 
 		// if no hole on the right, combine the right fragment with the data
 //		if ee.Block!=nil {
-//			fmt.Printf("level %d rholesz %d ee.Block %p ctype %x ee.Type %x\n", l, rholesz, ee.Block, ctype, ee.Type())
+//			debug("level %d rholesz %d ee.Block %p ctype %x ee.Type %x\n", l, rholesz, ee.Block, ctype, ee.Type())
 //		} else {
-//			fmt.Printf("level %d rholesz %d ee.Block %p\n", l, rholesz, ee.Block)
+//			debug("level %d rholesz %d ee.Block %p\n", l, rholesz, ee.Block)
 //		}
 		if rholesz == 0 && ee.Block!=nil && ctype==ee.Type() {
 			ds[3] = rbuf
@@ -722,12 +716,12 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 				return 0, err
 			}
 
-//			fmt.Printf("prevSize: %d\n", ssz)
+//			debug("prevSize: %d\n", ssz)
 			if ssz>0 && ssz<maxblksz {
 				sbp.prev(l)
 				if l==0 && sbp.entries[l].Block!=nil && sbp.entries[l].Type()!=ctype {
 					// different content type, can't merge
-//					fmt.Printf("can't merge with prev\n")
+//					debug("can't merge with prev\n")
 					sbp.next(l)
 				} else {
 					ds[0] = sbp.entries[l].Data
@@ -744,12 +738,12 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 				return 0, err
 			}
 
-//			fmt.Printf("nextSize: %d\n", esz)
+//			debug("nextSize: %d\n", esz)
 			if esz>0 && esz<Conf.Maxblocksz {
 				ebp.next(l)
 				if l==0 && ebp.entries[l].Type()!=ctype {
 					// different content type, can't merge
-//					fmt.Printf("can't merge with next\n")
+//					debug("can't merge with next\n")
 					ebp.prev(l)
 				} else {
 					ds[4] = ebp.entries[l].Data
@@ -760,7 +754,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 			}
 		}
 
-//		fmt.Printf("Write: ds %v\n", ds)
+//		debug("Write: ds %v\n", ds)
 		blks := copyToBlocks(ds, datasz, ctype, maxblksz)
 		bnum := len(blks)
 		lblk := (*Block)(nil)
@@ -768,7 +762,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 			lblk = bc.NewBlock(se.Type(), false, uint16(len(lbuf)))
 			copy(lblk.Data, lbuf)
 			bnum++
-//			fmt.Printf("lblk %p\n", lblk)
+			debug("lblk %p\n", lblk)
 		}
 
 		if lholesz>0 {
@@ -784,12 +778,12 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 			rblk = bc.NewBlock(ee.Type(), false, uint16(len(rbuf)))
 			copy(rblk.Data, rbuf)
 			bnum++
-//			fmt.Printf("rblk %p %v\n", rblk, rblk.Data)
+			debug("rblk %p %v\n", rblk, rblk.Data)
 		}
 
 		sof := sbp.isStartOfFile(l)
 		eof := ebp.isEndOfFile(l)
-//		fmt.Printf("bnum %d sof %v eof %v\n", bnum, sof, eof)
+//		debug("bnum %d sof %v eof %v\n", bnum, sof, eof)
 		if bnum==1 && sof && eof && len(blks) == 1 {
 			rootblk = blks[0]
 			break
@@ -802,7 +796,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		if lblk != nil {
 			// left unmerged data
 			newblocks = append(newblocks, lblk)
-//			fmt.Printf("Store block %v type %x %v\n", lblk.Offset, lblk.Type(), lblk.Data)
+			debug("Store block %v type %x %v\n", lblk.Offset, lblk.Type(), lblk.Data)
 			p = pint64(lblk.Offset, p)
 			p = pint64(blockSize(lblk), p)
 		}
@@ -816,6 +810,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 		newblocks = append(newblocks, blks...)
 		for i:=0; i < len(blks); i++ {
+			debug("Store block %v type %x %v\n", blks[i].Offset, blks[i].Type(), blks[i].Data)
 			p = pint64(blks[i].Offset, p)
 			p = pint64(blockSize(blks[i]), p)
 		}
@@ -830,6 +825,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		if rblk != nil {
 			// left unmerged data
 			newblocks = append(newblocks, rblk)
+			debug("Store block %v type %x %v\n", rblk.Offset, rblk.Type(), rblk.Data)
 			p = pint64(rblk.Offset, p)
 			p = pint64(blockSize(rblk), p)
 		}
@@ -845,13 +841,13 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 	rootblk.SetRoot(true)
 	newblocks = append(newblocks, rootblk)
-//	fmt.Printf("Store root block %v %p %v\n", rootblk.Offset, rootblk.Data, rootblk.Data)
+	debug("Store root block %v %p %v\n", rootblk.Offset, rootblk.Data, rootblk.Data)
 	err = bc.StoreBlocks(newblocks)
 	return rootblk.Offset, err
 }
 
 func Read(root, offset uint64, data []byte) (int, error, uint16) {
-//	fmt.Printf("Read root %v offset %v count %v\n", root, offset, len(data))
+//	debug("Read root %v offset %v count %v\n", root, offset, len(data))
 	bp, err := find(root, offset)
 	if err!=nil || bp.isEndOfFile(0) {
 		return 0, err, BTHole
@@ -865,7 +861,7 @@ func Read(root, offset uint64, data []byte) (int, error, uint16) {
 	}
 
 	for len(data) > 0 {
-//		fmt.Printf("Read: entry start %v end %v pos %v b %p\n", e.start, e.end, e.pos, e.Block)
+//		debug("Read: entry start %v end %v pos %v b %p\n", e.start, e.end, e.pos, e.Block)
 		n := len(data)
 		if n > int(e.end - e.start - uint64(e.pos)) {
 			n = int(e.end - e.start - uint64(e.pos))
@@ -873,13 +869,13 @@ func Read(root, offset uint64, data []byte) (int, error, uint16) {
 
 		if n>0 {
 			if e.Block==nil {
-//				fmt.Printf("Hole for %d bytes\n", n)
+//				debug("Hole for %d bytes\n", n)
 				for i:=0; i < n; i++ {
 					data[i] = 0
 				}
 				ctype = BTHole
 			} else {
-//				fmt.Printf("Data for %d bytes\n", n)
+//				debug("Data for %d bytes\n", n)
 				copy(data, e.Data[e.pos:e.pos+uint64(n)])
 			}
 
@@ -913,7 +909,7 @@ func Read(root, offset uint64, data []byte) (int, error, uint16) {
 		}
 	}
 
-//	fmt.Printf("Read: got %d bytes type %x\n", count, ctype)
+//	debug("Read: got %d bytes type %x\n", count, ctype)
 	return count, nil, ctype
 }
 
@@ -988,7 +984,7 @@ func (btnode) Commit(data []byte) bool {
 		if (bid%2) == 1 {
 			cb, err := bc.Get(bid)
 			if err!=nil {
-//				fmt.Printf("error while committing: %v\n", err)
+//				debug("error while committing: %v\n", err)
 				return false
 			}
 
@@ -996,7 +992,7 @@ func (btnode) Commit(data []byte) bool {
 				return false
 			}
 
-//			fmt.Printf("btnode.Commit replace %d with %d\n", bid, cb.Offset)
+//			debug("btnode.Commit replace %d with %d\n", bid, cb.Offset)
 			pint64(cb.Offset, ent)
 		}
 	}

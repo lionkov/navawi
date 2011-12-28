@@ -36,7 +36,9 @@ var oplen = flag.Int("o", 65536, "upper bound on operation size")
 var numop = flag.Int("N", 1000000, "total number of operations")
 var seed = flag.Int64("S", 1, "seed for random number generator")
 var checkAll = flag.Bool("c", false, "check the content of the whole file after every write")
+var checkSize = flag.Bool("s", false, "check the file size after each write operation")
 var threadnum = flag.Int("t", 1, "number of op threads")
+var dbgAt = flag.Int("g", -1, "turn on Gostor debugging for the specified operation number")
 
 var testc chan bool
 
@@ -125,16 +127,10 @@ func (f *File) Write(op *Op) error {
 		return nil
 	}
 
-	left := op.start
-	right := int64(f.datalen) - op.end
-	if right < 0 {
-		right = 0
-	}
-
-	newdata := make([]byte, left + right + int64(op.count))
+	newdata := make([]byte, filesz)
 
 	// copy left side
-	n := left
+	n := op.start
 	if n > int64(f.datalen) {
 		n = int64(f.datalen)
 	}
@@ -206,8 +202,14 @@ func (f *File) test() (err error) {
 			op.len = op.count
 		}
 		err = f.Write(op)
-		if err == nil && *checkAll {
-			err = f.checkFile()
+		if err == nil {
+			if *checkAll {
+				err = f.checkFile()
+			}
+
+			if err==nil && *checkSize {
+				err = f.checkSize()
+			}
 		}
 	}
 
@@ -230,9 +232,17 @@ func (f *File) checkSize() error {
 func testloop() (err error) {
 	f := new(File)
 	for i := 0; i < *numop; i++ {
+		if i==*dbgAt {
+			gostor.SetDebug(true)
+		}
+
 		err = f.test()
 		if err!=nil {
 			break
+		}
+		
+		if i==*dbgAt {
+			gostor.SetDebug(false)
 		}
 
 		if rand.Intn(32) == 0 {
@@ -264,6 +274,7 @@ func testloop() (err error) {
 
 	fmt.Printf("Error: %s\n", err)
 	testc <- true
+	gostor.Sync(f.root)
 	return err
 }
 

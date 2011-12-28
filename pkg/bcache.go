@@ -31,8 +31,8 @@ const (	// Predefined Block Types
 
 const (
 	MaxNoncommitSize = 10*1024*1024	// 10MB
-	MaxCommitTime = 3000000000	// 3s
-//	MaxCommitTime = 30000000000	// 30s
+//	MaxCommitTime = 3000000000	// 3s
+	MaxCommitTime = 30000000000	// 30s
 )
 
 const (
@@ -121,10 +121,10 @@ func (bc *BlockCache) commitproc() {
 		c = nil
 		select {
 		case _ = <- tick:
-			err = bc.commit()
+			err = bc.commit(true)
 
 		case c = <- bc.commitchan:
-			err =bc.commit()
+			err = bc.commit(c!=nil)
 		}
 
 		if err != nil {
@@ -167,14 +167,14 @@ func RegisterDataType(bt DataType) bool {
 
 // reads a block from the disk and parses the header
 func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
-//	fmt.Printf("BlockCache.readBlock offset %d\n", offset)
+//	debug("BlockCache.readBlock offset %d\n", offset)
 	b.Offset = offset
 	hdr, err := bc.dc.Read(offset, BTHeaderSize)
 	if err!=nil {
 		return err
 	}
 
-//	fmt.Printf("BlockCache.readBlock: offset %v header %v\n", offset, hdr)
+//	debug("BlockCache.readBlock: offset %v header %v\n", offset, hdr)
 	magic, p := gint32(hdr)
 	if magic != BTMagic {
 //		var str *string
@@ -184,7 +184,7 @@ func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
 
 	b.Length, p = gint16(p)
 	b.blktype, p = gint16(p)
-//	fmt.Printf("BlockCache.readBlock: offset %v length %v type %v\n", offset, b.Length, b.blktype)
+//	debug("BlockCache.readBlock: offset %v length %v type %v\n", offset, b.Length, b.blktype)
 	b.raw, err = bc.dc.Read(offset, uint32(b.Length) + BTHeaderSize)
 	if err!=nil {
 		return err
@@ -230,7 +230,7 @@ func (bc *BlockCache) Get(offset uint64) (*Block, error) {
 		// 1. no reading from the disk
 		// 2. not in the lru list
 		if b==nil {
-			fmt.Printf("**** uncommitted block %d not found\n", offset)
+			debug("**** uncommitted block %d not found\n", offset)
 			err = errors.New(fmt.Sprintf("uncommitted block %d not found", offset))
 
 			var s *string
@@ -393,7 +393,7 @@ func (bc *BlockCache) checkCommit() {
 func (bc *BlockCache) gc() {
 	// mark
 	for _, b := range bc.liveblocks {
-//		fmt.Printf("BlockCache.gc live block %p\n", b)
+//		debug("BlockCache.gc live block %p\n", b)
 		bc.mark(b)
 	}
 
@@ -403,7 +403,7 @@ func (bc *BlockCache) gc() {
 		if b.color == CBlack {
 			// not referenced
 
-//			fmt.Printf("remove garbage from cache block %d %p prev %p next %p ucfirst %p uclast %p\n", b.Offset, b, b.ucprev, b.ucnext, bc.ucfirst, bc.uclast)
+//			debug("remove garbage from cache block %d %p prev %p next %p ucfirst %p uclast %p\n", b.Offset, b, b.ucprev, b.ucnext, bc.ucfirst, bc.uclast)
 			// remove from the list of uncommitted blocks
 			if b.ucnext!=nil {
 				b.ucnext.ucprev = b.ucprev
@@ -445,7 +445,7 @@ func (bc *BlockCache) mark(b *Block) {
 	}
 
 	if b.blkref==nil {
-//		fmt.Printf("BlockCache.mark %d\n", b.Offset)
+//		debug("BlockCache.mark %d\n", b.Offset)
 		b.blkref = b.bt.Files(b.Data)
 	}
 
@@ -458,31 +458,31 @@ func (bc *BlockCache) mark(b *Block) {
 			// mark only uncommitted blocks
 			bb := bc.cache[bs[i]]
 			if bb==nil {
-				fmt.Printf("block with id %d doesn't exist\n", bs[i])
+				debug("block with id %d doesn't exist\n", bs[i])
 			}
 			bc.mark(bc.cache[bs[i]])
 		}
 	}
 }
 
-func (bc *BlockCache) commit() error {
+func (bc *BlockCache) commit(force bool) error {
 	var b *Block
 
 	bc.Lock()
 	bc.gc()
-	if bc.ucsize==0 {
+	if bc.ucsize==0 || (!force && bc.ucsize < bc.maxucsize) {
 		bc.Unlock()
 		return nil
 	}
 
-//	fmt.Printf("BlockCache.commit ucsize %d ucfirst %p\n", bc.ucsize, bc.ucfirst)
+//	debug("BlockCache.commit ucsize %d ucfirst %p\n", bc.ucsize, bc.ucfirst)
 	frag, err := sm.AllocFragment(uint32(bc.ucfirst.Length + BTHeaderSize), bc.ucsize)
 	if err!=nil {
 		bc.Unlock()
 		return err
 	}
 
-//	fmt.Printf("BlockCache.commit frag size %v len(Data) %v\n", frag.size, len(frag.Data))
+//	debug("BlockCache.commit frag size %v len(Data) %v\n", frag.size, len(frag.Data))
 	offset := frag.DataOffset
 	count := uint32(len(frag.Data))
 	c1 := bc.ocoffset
@@ -495,7 +495,7 @@ func (bc *BlockCache) commit() error {
 			break
 		}
 
-//		fmt.Printf("BlockCache.commit %d --> %d\n", b.Offset, offset)
+//		debug("BlockCache.commit %d --> %d\n", b.Offset, offset)
 		bc.coffset = b.Offset
 		b.ucid = b.Offset
 		b.Offset = offset
@@ -523,7 +523,7 @@ func (bc *BlockCache) commit() error {
 	if bc.ucfirst == nil {
 		bc.uclast = nil
 	}
-//	fmt.Printf("BlockCache.commit ucsize %v n %v\n", bc.ucsize, n)
+//	debug("BlockCache.commit ucsize %v n %v\n", bc.ucsize, n)
 	bc.ucsize -= n
 	bc.Unlock()
 
@@ -542,17 +542,17 @@ func (bc *BlockCache) commit() error {
 		m := bb.Length
 		m += m%2
 		copy(p, bb.raw[0:bb.Length + BTHeaderSize])
-//		fmt.Printf("BlockCache.commit offset %v data %v\n", bb.Offset, bb.raw[0:bb.Length+BTHeaderSize])
-//		fmt.Printf("BlockCache.commit offset %v block %p count %v remaining %v\n", bb.Offset, bb, m+BTHeaderSize, len(p))
+//		debug("BlockCache.commit offset %v data %v\n", bb.Offset, bb.raw[0:bb.Length+BTHeaderSize])
+//		debug("BlockCache.commit offset %v block %p count %v remaining %v\n", bb.Offset, bb, m+BTHeaderSize, len(p))
 		p = p[m+BTHeaderSize:]
 	}
 
 	// remove uncommitted blocks with odd offsets from the cache
 	bc.Lock()
-//	fmt.Printf("BlockCache.commit remove blocks from %d to %d\n", bc.ocoffset, c1)
+//	debug("BlockCache.commit remove blocks from %d to %d\n", bc.ocoffset, c1)
 	for bc.ocoffset < c1 {
 		if bc.liveblocks[bc.ocoffset]==nil {
-//			fmt.Printf("BlockCache.commit remove block %d from cache\n", c0)
+//			debug("BlockCache.commit remove block %d from cache\n", c0)
 			delete(bc.cache, bc.ocoffset)
 		}
 
@@ -587,13 +587,13 @@ func (bc *BlockCache) NewBlock(blktype uint16, root bool, length uint16) *Block 
 
 func (bc *BlockCache) AddLiveBlock(b *Block) {
 	bc.Lock()
-//	fmt.Printf("BlockCache.AddLiveBlock %p\n", b)
+//	debug("BlockCache.AddLiveBlock %p\n", b)
 	bc.liveblocks[b.Offset] = b
 	bc.Unlock()
 }
 
 func (bc *BlockCache) RemoveLiveBlock(b *Block) {
-//	fmt.Printf("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
+//	debug("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
 	bc.Lock()
 	delete(bc.liveblocks, b.Offset)
 	if b.ucid==0 {

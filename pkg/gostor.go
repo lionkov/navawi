@@ -2,7 +2,7 @@ package gostor
 
 import (
 	"errors"
-//	"fmt"
+	"fmt"
 	"os"
 )
 
@@ -68,7 +68,7 @@ func Id(root uint64) (uint64, error) {
 // Commit the specified root to disk. The file needs to be
 // still "live"
 func Sync(root uint64) error {
-//	fmt.Printf("Sync %v\n", root)
+//	debug("Sync %v\n", root)
 	if root%2==0 && root!=0 {
 		return nil
 	}
@@ -78,20 +78,20 @@ func Sync(root uint64) error {
 		return err
 	}
 
-//	fmt.Printf("blk %p type %x\n", b, b.blktype)
+//	debug("blk %p type %x\n", b, b.blktype)
 	if !b.IsRoot() {
 		return errors.New("not root")
 	}
 
 	bc.Commit(b)
-//	fmt.Printf("Sync old %v new %v\n", root, b.Offset)
+//	debug("Sync old %v new %v\n", root, b.Offset)
 	return nil
 }
 
 // Forget the file with ID root. If the file is not referenced by other files
 // it will be garbage collected (eventually)
 func Forget(root uint64) error {
-//	fmt.Printf("Forget %d\n", root)
+//	debug("Forget %d\n", root)
 	b, err := bc.Get(root)
 	if err!=nil {
 		return err
@@ -143,13 +143,25 @@ func Size(root uint64) (uint64, error) {
 		sz = uint64(len(b.Data))
 	} else {
 		nent := len(b.Data)/BTEntrySize
-//		fmt.Printf("Size: nent %d %v\n", nent, b.Data)
+//		debug("Size: nent %d %v\n", nent, b.Data)
 		for i:=0; i<nent; i++ {
 			n, _ := gint64(b.Data[i*BTEntrySize+8:])
 			sz += n
 		}
 	}
 
-//	fmt.Printf("Size %d %d\n", root, sz)
+//	debug("Size %d %d\n", root, sz)
 	return sz, nil
+}
+
+var debugFlag bool
+
+func SetDebug(on bool) {
+	debugFlag = on
+}
+
+func debug(f string, a ...interface{}) {
+	if debugFlag {
+		fmt.Printf(f, a...)
+	}
 }
