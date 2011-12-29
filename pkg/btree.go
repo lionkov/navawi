@@ -221,11 +221,6 @@ func (bp *BTPath) nextSize(level int) (int, error) {
 //	debug("nextSize: level %d pos %d entnum %d sz %d\n", l, e.pos, e.entnum, sz)
 
 	for ; l>level; l-- {
-		if blk==0 {
-			// hole
-			return 0, nil
-		}
-
 		b, err := bc.Get(blk)
 		if err!=nil {
 //			debug("nextSize: error %v\n", err)
@@ -238,6 +233,18 @@ func (bp *BTPath) nextSize(level int) (int, error) {
 		}
 
 		bc.Release(b)
+	}
+
+	if level > 0 {
+		b, err := bc.Get(blk)
+		if err!=nil {
+			return 0, err
+		}
+
+		sz = uint64(len(b.Data))
+		bc.Release(b)
+	} else if blk==0 {
+		sz = 0
 	}
 
 	return int(sz), nil
@@ -330,13 +337,9 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 	pos := e.pos - 1
 	blk, p := gint64(e.Data[pos*BTEntrySize:])
 	sz, _ := gint64(p)
+
 //	debug("prevSize: l %d bp.levels %d pos %d blk %d sz %d\n", l, bp.levels, pos, blk, sz)
 	for ; l > level; l-- {
-		if blk==0 {
-			// hole
-			return 0, nil
-		}
-
 		b, err := bc.Get(blk)
 		if err!=nil {
 //			debug("prevSize: error %v\n", err)
@@ -352,6 +355,18 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 		bc.Release(b)
 	}
 
+	if level > 0 {
+		b, err := bc.Get(blk)
+		if err!=nil {
+			return 0, err
+		}
+
+		sz = uint64(len(b.Data))
+		bc.Release(b)
+	} else if blk==0 {
+		sz = 0
+	}
+ 
 //	debug("prevSize blk %d\n", blk)
 	return int(sz), nil
 }
@@ -585,7 +600,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	var rootblk *Block
 
 
-	debug("Write root %v start %v end %v count %d\n", root, start, end, count)
+//	debug("Write root %v start %v end %v count %d\n", root, start, end, count)
 	sbp, err := find(root, start)
 	if err != nil {
 		return 0, err
@@ -599,8 +614,8 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		return 0, err
 	}
 
-	debug("** sbp %v\n", sbp)
-	debug("** ebp %v\n", ebp)
+//	debug("** sbp %v\n", sbp)
+//	debug("** ebp %v\n", ebp)
 	datalen := 0
 	if data!=nil {
 		datalen = len(data)
@@ -614,39 +629,39 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	lholesz := uint64(0)
 	if sbp.entries[0].end < start {
 		// if the start is past end of file, put hole on the left
-		debug("Write: past end of file: start %d end %d start %d\n", sbp.entries[0].start, sbp.entries[0].end, start)
+//		debug("Write: past end of file: start %d end %d start %d\n", sbp.entries[0].start, sbp.entries[0].end, start)
 		lholesz = start - sbp.entries[0].end
 		start = sbp.entries[0].end
 	}
 
 	if sbp.entries[0].Block == nil {
 		// if the start is within a hole, recalculate the hole size
-		debug("Write: start within a hole start %d pos %d\n", sbp.entries[0].start, sbp.entries[0].pos)
+//		debug("Write: start within a hole start %d pos %d\n", sbp.entries[0].start, sbp.entries[0].pos)
 		lholesz += start - sbp.entries[0].start
 		sbp.entries[0].pos = 0
 	}
 
 	if ebp.entries[0].Block == nil && ebp.entries[0].end > end {
 		// if the end is within a hole, recalculate the hole size
-		debug("Write: end within a hole end %d pos %d\n", ebp.entries[0].end, ebp.entries[0].pos)
+//		debug("Write: end within a hole end %d pos %d\n", ebp.entries[0].end, ebp.entries[0].pos)
 		rholesz += ebp.entries[0].end - end
 		ebp.entries[0].pos = ebp.entries[0].end - ebp.entries[0].start
 	}
 
 	// if we are inserting a hole, merge lhole, hole and rhole
-	debug("first lholesz %v rholesz %v\n", lholesz, rholesz)
+//	debug("first lholesz %v rholesz %v\n", lholesz, rholesz)
 	if data==nil {
 		lholesz += rholesz
 		count = 0
 		rholesz = 0
 	}
 
-	debug("second lholesz %v rholesz %v\n", lholesz, rholesz)
+//	debug("second lholesz %v rholesz %v\n", lholesz, rholesz)
 	maxblksz := Conf.Maxdatablocksz
 	for l = 0; l < BTMaxLevels; l++ {
-		debug("Level %d -----------\n", l)
-		debug("sbp %v\n", sbp)
-		debug("ebp %v\n", ebp)
+//		debug("Level %d -----------\n", l)
+//		debug("sbp %v\n", sbp)
+//		debug("ebp %v\n", ebp)
 		se := &sbp.entries[l]
 		ee := &ebp.entries[l]
 
@@ -666,14 +681,14 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 		lbuf := []byte(nil)
 		if se.Block != nil && se.pos > 0 {
-			debug("partially overwritten at the beginning: level %d len(e.Data) %d e.start %v e.end %v pos %v\n", l, len(se.Data), se.start, se.end, se.pos)
+//			debug("partially overwritten at the beginning: level %d len(e.Data) %d e.start %v e.end %v pos %v\n", l, len(se.Data), se.start, se.end, se.pos)
 			if l==0 {
 				lbuf = se.Data[0:se.pos]
 			} else if se.pos > 0 {
 				lbuf = se.Data[0:se.pos*BTEntrySize]
 			}
 		}
-		debug("lbuf %v\n", lbuf)
+//		debug("lbuf %v\n", lbuf)
 
 		// if no hole on the left, combine the left fragment with the data
 		if lholesz==0 && se.Block!=nil && ctype==se.Type() {
@@ -684,7 +699,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 		rbuf := []byte(nil)
 		if ee.Block != nil {
-			debug("partially overwritten at the end: len(e.Data) %d e.start %v e.end %v end %v pos %v\n", len(ee.Data), ee.start, ee.end, end, ee.pos)
+//			debug("partially overwritten at the end: len(e.Data) %d e.start %v e.end %v end %v pos %v\n", len(ee.Data), ee.start, ee.end, end, ee.pos)
 			if l==0 {
 				if ee.pos < uint64(len(ee.Data)) {
 					rbuf = ee.Data[ee.pos:]
@@ -696,7 +711,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 				}
 			}
 		}
-		debug("rbuf %v\n", rbuf)
+//		debug("rbuf %v\n", rbuf)
 
 		// if no hole on the right, combine the right fragment with the data
 //		if ee.Block!=nil {
@@ -725,7 +740,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 					sbp.next(l)
 				} else {
 					ds[0] = sbp.entries[l].Data
-					datasz += len(ds[l])
+					datasz += len(ds[0])
 					start = sbp.entries[l].start
 				}
 				se = &sbp.entries[l]
@@ -762,7 +777,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 			lblk = bc.NewBlock(se.Type(), false, uint16(len(lbuf)))
 			copy(lblk.Data, lbuf)
 			bnum++
-			debug("lblk %p\n", lblk)
+//			debug("lblk %p\n", lblk)
 		}
 
 		if lholesz>0 {
@@ -778,7 +793,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 			rblk = bc.NewBlock(ee.Type(), false, uint16(len(rbuf)))
 			copy(rblk.Data, rbuf)
 			bnum++
-			debug("rblk %p %v\n", rblk, rblk.Data)
+//			debug("rblk %p %v\n", rblk, rblk.Data)
 		}
 
 		sof := sbp.isStartOfFile(l)
@@ -796,7 +811,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		if lblk != nil {
 			// left unmerged data
 			newblocks = append(newblocks, lblk)
-			debug("Store block %v type %x %v\n", lblk.Offset, lblk.Type(), lblk.Data)
+//			debug("Store block %v type %x %v\n", lblk.Offset, lblk.Type(), lblk.Data)
 			p = pint64(lblk.Offset, p)
 			p = pint64(blockSize(lblk), p)
 		}
@@ -810,7 +825,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 		newblocks = append(newblocks, blks...)
 		for i:=0; i < len(blks); i++ {
-			debug("Store block %v type %x %v\n", blks[i].Offset, blks[i].Type(), blks[i].Data)
+//			debug("Store block %v type %x %v\n", blks[i].Offset, blks[i].Type(), blks[i].Data)
 			p = pint64(blks[i].Offset, p)
 			p = pint64(blockSize(blks[i]), p)
 		}
@@ -825,7 +840,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		if rblk != nil {
 			// left unmerged data
 			newblocks = append(newblocks, rblk)
-			debug("Store block %v type %x %v\n", rblk.Offset, rblk.Type(), rblk.Data)
+//			debug("Store block %v type %x %v\n", rblk.Offset, rblk.Type(), rblk.Data)
 			p = pint64(rblk.Offset, p)
 			p = pint64(blockSize(rblk), p)
 		}
@@ -841,7 +856,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 
 	rootblk.SetRoot(true)
 	newblocks = append(newblocks, rootblk)
-	debug("Store root block %v %p %v\n", rootblk.Offset, rootblk.Data, rootblk.Data)
+//	debug("Store root block %v %p %v\n", rootblk.Offset, rootblk.Data, rootblk.Data)
 	err = bc.StoreBlocks(newblocks)
 	return rootblk.Offset, err
 }
@@ -875,7 +890,7 @@ func Read(root, offset uint64, data []byte) (int, error, uint16) {
 				}
 				ctype = BTHole
 			} else {
-//				debug("Data for %d bytes\n", n)
+				debug("Data for %d bytes start %d end %d pos %d len %d\n", n, e.start, e.end, e.pos, len(e.Data))
 				copy(data, e.Data[e.pos:e.pos+uint64(n)])
 			}
 
