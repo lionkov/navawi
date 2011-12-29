@@ -38,9 +38,11 @@ var seed = flag.Int64("S", 1, "seed for random number generator")
 var checkAll = flag.Bool("c", false, "check the content of the whole file after every write")
 var checkSize = flag.Bool("s", false, "check the file size after each write operation")
 var threadnum = flag.Int("t", 1, "number of op threads")
-var dbgAt = flag.Int("g", -1, "turn on Gostor debugging for the specified operation number")
+var dbgFrom = flag.Int("df", -1, "turn on Gostor debugging at the specified operation number")
+var dbgTo = flag.Int("dt", -1, "turn off Gostor debugging at the specified operation number")
+var dump = flag.Bool("dump", false, "attach dump to each write operation")
 
-var testc chan bool
+var testc chan error
 
 func (f *File) Read(op *Op) error {
 	if *debug {
@@ -119,7 +121,6 @@ func (f *File) Write(op *Op) error {
 		return err
 	}
 
-	op.dump, err = gostor.Dump(newroot)
 	if op.count==op.len && op.count==int32(op.end - op.start) && uint64(op.end) < f.datalen {
 		copy(f.data[op.start:], buf)
 		gostor.Forget(f.root)
@@ -203,7 +204,11 @@ func (f *File) test() (err error) {
 		}
 		err = f.Write(op)
 		if err == nil {
-			if *checkAll {
+			if *dump {
+				op.dump, err = gostor.Dump(f.root)
+			}
+
+			if err==nil && *checkAll {
 				err = f.checkFile()
 			}
 
@@ -229,10 +234,12 @@ func (f *File) checkSize() error {
 	return nil
 }
 
-func testloop() (err error) {
+func testloop() {
+	var err error
+
 	f := new(File)
 	for i := 0; i < *numop; i++ {
-		if i==*dbgAt {
+		if i==*dbgFrom {
 			gostor.SetDebug(true)
 		}
 
@@ -241,7 +248,7 @@ func testloop() (err error) {
 			break
 		}
 		
-		if i==*dbgAt {
+		if i==*dbgTo {
 			gostor.SetDebug(false)
 		}
 
@@ -253,9 +260,18 @@ func testloop() (err error) {
 		}
 	}
 
+	gostor.Sync(f.root)
 	if err==nil {
-		testc <- true
-		return nil
+		err = f.checkFile()
+	}
+
+	if err==nil {
+		err = f.checkSize()
+	}
+
+	if err==nil {
+		testc <- nil
+		return
 	}
 
 	for i, op := range f.ops {
@@ -273,9 +289,7 @@ func testloop() (err error) {
 	}
 
 	fmt.Printf("Error: %s\n", err)
-	testc <- true
-	gostor.Sync(f.root)
-	return err
+	testc <- err
 }
 
 func main() {
@@ -293,7 +307,7 @@ func main() {
 		return
 	}
 
-	testc = make(chan bool)
+	testc = make(chan error)
 	for i:=0; i < *threadnum; i++ {
 		go testloop()
 	}
