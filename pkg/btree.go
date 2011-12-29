@@ -928,12 +928,18 @@ func Read(root, offset uint64, data []byte) (int, error, uint16) {
 	return count, nil, ctype
 }
 
-func Dump(root uint64) (string, error) {
-	s := fmt.Sprintf("Dump file %d:\n", root)
+func Dump(root uint64, showlevels bool) (string, error) {
+	s := fmt.Sprintf("Dump file %d", root)
 	bp, err := find(root, 0)
 	if err!=nil {
-		s = fmt.Sprintf("%s\tError: %s\n", s, err)
+		s = fmt.Sprintf("%s\n\tError: %s\n", s, err)
 		return s, err
+	}
+
+	if showlevels {
+		s = fmt.Sprintf("%s levels %d:\nLevel 0\n", s, bp.levels)
+	} else {
+		s = fmt.Sprintf("%s:\n", s)
 	}
 
 	offset := uint64(0)
@@ -959,6 +965,35 @@ func Dump(root uint64) (string, error) {
 	}
 
 	s = fmt.Sprintf("%s\t%06d EOF\n", s, offset)
+
+	if !showlevels {
+		return s, nil
+	}
+
+	lvl := bp.levels
+	for l := 1; l < lvl; l++ {
+		bp, err := find(root, 0)
+		if err!=nil {
+			s = fmt.Sprintf("%s\tError: %s\n", s, err)
+			return s, err
+		}
+			
+		e := &bp.entries[l]
+		s = fmt.Sprintf("%sLevel %d\n", s, l)
+		for {
+			s = fmt.Sprintf("%s\t%06d %d\n", s, e.start, len(e.Data))
+			moved, err := bp.next(l)
+			if err!=nil {
+				s = fmt.Sprintf("%s\tError: %s\n", s, err)
+				return s, err
+			}
+
+			if !moved {
+				break
+			}
+		}
+	}
+
 	return s, nil
 }
 

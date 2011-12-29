@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"gostor"
+	"math"
 	"math/rand"
 )
 
@@ -33,14 +34,14 @@ type File struct {
 var debug = flag.Bool("d", false, "debug output for all operations")
 var flen = flag.Int64("l", 262144, "upper bound on file size")
 var oplen = flag.Int("o", 65536, "upper bound on operation size")
-var numop = flag.Int("N", 1000000, "total number of operations")
+var numop = flag.Int("N", math.MaxInt32, "total number of operations")
 var seed = flag.Int64("S", 1, "seed for random number generator")
-var checkAll = flag.Bool("c", false, "check the content of the whole file after every write")
-var checkSize = flag.Bool("s", false, "check the file size after each write operation")
+var checkAll = flag.Uint("c", math.MaxUint32, "check the content of the whole file after every write past the specified operation number")
+var checkSize = flag.Uint("s", math.MaxUint32, "check the file size after each write operation past the specified operation number")
 var threadnum = flag.Int("t", 1, "number of op threads")
 var dbgFrom = flag.Int("df", -1, "turn on Gostor debugging at the specified operation number")
 var dbgTo = flag.Int("dt", -1, "turn off Gostor debugging at the specified operation number")
-var dump = flag.Bool("dump", false, "attach dump to each write operation")
+var dump = flag.Uint("dump", math.MaxUint32, "attach dump to each write operation past the specified operation number")
 
 var testc chan error
 
@@ -121,33 +122,22 @@ func (f *File) Write(op *Op) error {
 		return err
 	}
 
-	if op.count==op.len && op.count==int32(op.end - op.start) && uint64(op.end) < f.datalen {
-		copy(f.data[op.start:], buf)
-		gostor.Forget(f.root)
-		f.root = newroot
-		return nil
+	if op.start > int64(f.datalen) {
+		for i := uint64(f.datalen); i < uint64(op.start); i++ {
+			f.data[i] = 0
+		}
 	}
 
-	newdata := make([]byte, filesz)
-
-	// copy left side
-	n := op.start
-	if n > int64(f.datalen) {
-		n = int64(f.datalen)
-	}
-	copy(newdata, f.data[0:n])
-
-	// copy new data
-	copy(newdata[op.start:], buf)
-
-	// copy right side
-	n = op.end
-	if n < int64(f.datalen) {
-		copy(newdata[op.start + int64(op.count):], f.data[op.end:])
+	if op.end < int64(f.datalen) {
+		copy(f.data[op.start + int64(op.count):], f.data[op.end:])
 	}
 
-	f.datalen = uint64(len(newdata))
-	f.data = newdata
+	copy(f.data[op.start:], buf)
+	for i := op.start + int64(op.len); i < op.start+int64(op.count); i++ {
+		f.data[i] = 0
+	}
+
+	f.datalen = uint64(filesz)
 	gostor.Forget(f.root)
 	f.root = newroot
 	return err
@@ -157,6 +147,8 @@ func (f *File) checkFile() error {
 //	fmt.Printf("checkFile\n")
 	offset := uint64(0)
 	buf := make([]byte, 1024*1024)
+//	s, _ := gostor.Dump(f.root)
+//	fmt.Printf("%s", s)
 	for offset < f.datalen {
 		n, err, _ := gostor.Read(f.root, offset, buf)
 		if err != nil {
@@ -179,7 +171,7 @@ func (f *File) checkFile() error {
 	return nil
 }
 
-func (f *File) test() (err error) {
+func (f *File) test(id uint) (err error) {
 	op := new(Op)
 	op.op = rand.Intn(Oplast)
 	op.start = rand.Int63n(*flen + int64(*oplen) * 2)
@@ -204,15 +196,20 @@ func (f *File) test() (err error) {
 		}
 		err = f.Write(op)
 		if err == nil {
-			if *dump {
-				op.dump, err = gostor.Dump(f.root)
+			if *dump <= id {
+				op.dump, err = gostor.Dump(f.root, true)
 			}
 
-			if err==nil && *checkAll {
+			if err==nil && *checkAll <= id {
+//				gostor.Sync(f.root)
 				err = f.checkFile()
+//				if err!=nil {
+//					s, _ := gostor.Dump(f.root)
+//					fmt.Printf("## %s\n", s)
+//				}
 			}
 
-			if err==nil && *checkSize {
+			if err==nil && *checkSize <= id {
 				err = f.checkSize()
 			}
 		}
@@ -238,12 +235,13 @@ func testloop() {
 	var err error
 
 	f := new(File)
+	f.data = make([]byte, *flen)
 	for i := 0; i < *numop; i++ {
 		if i==*dbgFrom {
 			gostor.SetDebug(true)
 		}
 
-		err = f.test()
+		err = f.test(uint(i))
 		if err!=nil {
 			break
 		}
@@ -270,6 +268,7 @@ func testloop() {
 	}
 
 	if err==nil {
+		fmt.Printf("Root %d\n", f.root)
 		testc <- nil
 		return
 	}
@@ -283,7 +282,7 @@ func testloop() {
 		}
 
 		fmt.Printf("%d. %s start %d end %d count %d len %d\n", i, nm, op.start, op.end, op.count, op.len)
-		if op.op == Opwrite {
+		if op.op == Opwrite && op.dump != "" {
 			fmt.Printf("    %s", op.dump)
 		}
 	}
