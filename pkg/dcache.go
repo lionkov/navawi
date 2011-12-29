@@ -158,3 +158,28 @@ func (dc *DiskCache) Discard(start, end uint64) {
 
 	dc.Unlock()
 }
+
+func (dc *DiskCache) ReadAll(offset uint64, count uint32) (ret []byte, err error) {
+	off := offset - offset%uint64(dc.blksz)
+	over := (off+uint64(dc.blksz)) < (offset + uint64(count))
+
+	if !over {
+		return dc.Read(offset, count)
+	}
+
+	ret = make([]byte, count)
+	n := dc.blksz - uint32(offset + off)
+	for b:=ret; len(b) > 0; {
+		d, err := dc.Read(offset, n)
+		if err!=nil {
+			return nil, err
+		}
+
+		m := copy(b, d)
+		b = b[m:]
+		offset += uint64(m)
+		n = dc.blksz
+	}
+
+	return
+}

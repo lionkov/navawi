@@ -167,7 +167,7 @@ func RegisterDataType(bt DataType) bool {
 
 // reads a block from the disk and parses the header
 func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
-//	debug("BlockCache.readBlock offset %d\n", offset)
+	debug("BlockCache.readBlock offset %d\n", offset)
 	b.Offset = offset
 	hdr, err := bc.dc.Read(offset, BTHeaderSize)
 	if err!=nil {
@@ -184,8 +184,8 @@ func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
 
 	b.Length, p = gint16(p)
 	b.blktype, p = gint16(p)
-//	debug("BlockCache.readBlock: offset %v length %v type %v\n", offset, b.Length, b.blktype)
-	b.raw, err = bc.dc.Read(offset, uint32(b.Length) + BTHeaderSize)
+	debug("BlockCache.readBlock: offset %v length %v type %v\n", offset, b.Length, b.blktype)
+	b.raw, err = bc.dc.ReadAll(offset, uint32(b.Length) + BTHeaderSize)
 	if err!=nil {
 		return err
 	}
@@ -495,7 +495,7 @@ func (bc *BlockCache) commit(force bool) error {
 			break
 		}
 
-//		debug("BlockCache.commit %d --> %d\n", b.Offset, offset)
+		debug("BlockCache.commit %d --> %d\n", b.Offset, offset)
 		bc.coffset = b.Offset
 		b.ucid = b.Offset
 		b.Offset = offset
