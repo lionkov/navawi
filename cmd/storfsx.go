@@ -268,7 +268,8 @@ func testloop() {
 	}
 
 	if err==nil {
-		fmt.Printf("Root %d\n", f.root)
+		id, _ := gostor.Id(f.root)
+		fmt.Printf("Root %d\n", id)
 		testc <- nil
 		return
 	}

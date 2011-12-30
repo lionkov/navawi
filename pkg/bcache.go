@@ -544,6 +544,10 @@ func (bc *BlockCache) commit(force bool) error {
 		copy(p, bb.raw[0:bb.Length + BTHeaderSize])
 //		debug("BlockCache.commit offset %v data %v\n", bb.Offset, bb.raw[0:bb.Length+BTHeaderSize])
 //		debug("BlockCache.commit offset %v block %p count %v remaining %v\n", bb.Offset, bb, m+BTHeaderSize, len(p))
+		if int(m+BTHeaderSize) > len(p) {
+			fmt.Printf("BlockCache.commit: m+BTHeaderSize %d len(p) %d\n", m+BTHeaderSize, len(p))
+		}
+
 		p = p[m+BTHeaderSize:]
 	}
 
