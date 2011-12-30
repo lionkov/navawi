@@ -50,6 +50,10 @@ func (dc *DiskCache) newEntry(offset uint64) (*entry, error) {
 // called with lock held
 func (dc *DiskCache) lruremove() {
 	e := dc.lru
+	if e==nil {
+		return
+	}
+
 	if e.mru!=nil {
 		e.mru.lru = nil
 	} else {
