@@ -660,6 +660,10 @@ func (b *Block) IsRoot() bool {
 }
 
 func (b *Block) Type() uint16 {
+	if b==nil {
+		return BTHole
+	}
+
 	return b.blktype & ^uint16(BTRoot)
 }
 

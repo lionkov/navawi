@@ -7,6 +7,10 @@ import (
 	"gostor"
 	"math"
 	"math/rand"
+	"net/http"
+_	"net/http/pprof"
+_	"runtime"
+_	"time"
 )
 
 const (
@@ -307,6 +311,7 @@ func main() {
 		return
 	}
 
+	go http.ListenAndServe(":6060", nil)
 	testc = make(chan error)
 	for i:=0; i < *threadnum; i++ {
 		go testloop()
@@ -315,4 +320,9 @@ func main() {
 	for i:=0; i < *threadnum; i++ {
 		_ = <- testc
 	}
+
+//	runtime.GC()
+//	for {
+//		time.Sleep(1000000000)
+//	}
 }

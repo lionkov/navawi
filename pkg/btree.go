@@ -220,22 +220,19 @@ func (bp *BTPath) nextSize(level int) (int, error) {
 	sz, _ := gint64(p)
 //	debug("nextSize: level %d pos %d entnum %d sz %d\n", l, e.pos, e.entnum, sz)
 
-	for ; l>level; l-- {
+	for ; l>level+1; l-- {
 		b, err := bc.Get(blk)
 		if err!=nil {
 //			debug("nextSize: error %v\n", err)
 			return 0, err
 		}
 
-		if l > 1 {
-			blk, p = gint64(b.Data)
-			sz, _ = gint64(p)
-		}
-
+		blk, p = gint64(b.Data)
+		sz, _ = gint64(p)
 		bc.Release(b)
 	}
 
-	if level > 0 {
+	if l > 0 {
 		b, err := bc.Get(blk)
 		if err!=nil {
 			return 0, err
@@ -339,7 +336,7 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 	sz, _ := gint64(p)
 
 //	debug("prevSize: l %d bp.levels %d pos %d blk %d sz %d\n", l, bp.levels, pos, blk, sz)
-	for ; l > level; l-- {
+	for ; l > level+1; l-- {
 		b, err := bc.Get(blk)
 		if err!=nil {
 //			debug("prevSize: error %v\n", err)
@@ -355,7 +352,7 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 		bc.Release(b)
 	}
 
-	if level > 0 {
+	if l > 0 {
 		b, err := bc.Get(blk)
 		if err!=nil {
 			return 0, err
@@ -736,7 +733,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 				sbp.prev(l)
 				if l==0 && sbp.entries[l].Block!=nil && sbp.entries[l].Type()!=ctype {
 					// different content type, can't merge
-//					debug("can't merge with prev\n")
+					debug("can't merge with prev\n")
 					sbp.next(l)
 				} else {
 					ds[0] = sbp.entries[l].Data
@@ -754,11 +751,11 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 			}
 
 //			debug("nextSize: %d\n", esz)
-			if esz>0 && esz<Conf.Maxblocksz {
+			if esz>0 && esz<maxblksz {
 				ebp.next(l)
 				if l==0 && ebp.entries[l].Type()!=ctype {
 					// different content type, can't merge
-//					debug("can't merge with next\n")
+					debug("can't merge with next\n")
 					ebp.prev(l)
 				} else {
 					ds[4] = ebp.entries[l].Data
@@ -890,7 +887,7 @@ func Read(root, offset uint64, data []byte) (int, error, uint16) {
 				}
 				ctype = BTHole
 			} else {
-				debug("Data for %d bytes start %d end %d pos %d len %d\n", n, e.start, e.end, e.pos, len(e.Data))
+//				debug("Data for %d bytes start %d end %d pos %d len %d\n", n, e.start, e.end, e.pos, len(e.Data))
 				copy(data, e.Data[e.pos:e.pos+uint64(n)])
 			}
 
@@ -1065,7 +1062,7 @@ func (bp *BTPath) String() string {
 	s := ""
 	for l := 0; l<bp.levels; l++ {
 		e := &bp.entries[l]
-		s = fmt.Sprintf("%s(l%d p%d s%d e%d b%p) ", s, l, e.pos, e.start, e.end, e.Block)
+		s = fmt.Sprintf("%s(l%d p%d s%d e%d n%d b%p) ", s, l, e.pos, e.start, e.end, e.entnum, e.Block)
 	}
 
 	return s
