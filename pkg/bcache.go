@@ -179,12 +179,11 @@ func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
 	if magic != BTMagic {
 //		var str *string
 //		*str = "boo"
-		return errors.New(fmt.Sprintf("invalid block header: offset %d", offset))
+		return errors.New(fmt.Sprintf("invalid block header: offset %d %x instead of %x", offset, magic, BTMagic))
 	}
 
 	b.Length, p = gint16(p)
 	b.blktype, p = gint16(p)
-	debug("BlockCache.readBlock: offset %v length %v type %v\n", offset, b.Length, b.blktype)
 	b.raw, err = bc.dc.ReadAll(offset, uint32(b.Length) + BTHeaderSize)
 	if err!=nil {
 		return err
@@ -199,6 +198,10 @@ func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
 func (bc *BlockCache) makeSpace() {
 	if uint32(len(bc.cache)) >= bc.maxcount {
 		db := bc.lru
+		if db==nil {
+			return
+		}
+
 		delete(bc.cache, db.Offset)
 		if db.mru != nil {
 			db.mru.lru = nil
@@ -206,7 +209,7 @@ func (bc *BlockCache) makeSpace() {
 			db.mru = nil
 		}
 
-		db.lru = db.mru
+		bc.lru = db.mru
 	}
 }
 
@@ -491,11 +494,11 @@ func (bc *BlockCache) commit(force bool) error {
 	for b = sb; b!=nil && n<count ; b = b.ucnext {
 		m := uint32(b.Length)
 		m += m%2
-		if n+m > count {
+		if n+m+BTHeaderSize > count {
 			break
 		}
 
-		debug("BlockCache.commit %d --> %d\n", b.Offset, offset)
+		debug("BlockCache.commit %d --> %d (%d)\n", b.Offset, offset, b.Length)
 		bc.coffset = b.Offset
 		b.ucid = b.Offset
 		b.Offset = offset
@@ -503,14 +506,6 @@ func (bc *BlockCache) commit(force bool) error {
 		offset += uint64(m) + BTHeaderSize
 		n += m + BTHeaderSize
 		c1 = b.coffset
-
-		// add to the LRU list
-		bc.makeSpace()
-		b.lru = bc.mru
-		bc.mru = b
-		if bc.lru == nil {
-			bc.lru = b
-		}
 	}
 
 	if b!=nil {
@@ -551,9 +546,13 @@ func (bc *BlockCache) commit(force bool) error {
 		p = p[m+BTHeaderSize:]
 	}
 
+	err = sm.CommitFragment(frag, n)
+	if err != nil {
+		return err
+	}
+
 	// remove uncommitted blocks with odd offsets from the cache
 	bc.Lock()
-//	debug("BlockCache.commit remove blocks from %d to %d\n", bc.ocoffset, c1)
 	for bc.ocoffset < c1 {
 		if bc.liveblocks[bc.ocoffset]==nil {
 //			debug("BlockCache.commit remove block %d from cache\n", c0)
@@ -562,9 +561,19 @@ func (bc *BlockCache) commit(force bool) error {
 
 		bc.ocoffset += 2
 	}
+
+	for bb:=sb; bb!=b; bb = bb.ucnext {
+		// add to the LRU list
+		bc.makeSpace()
+		bb.lru = bc.mru
+		bc.mru = bb
+		if bc.lru == nil {
+			bc.lru = bb
+		}
+	}
 	bc.Unlock()
 
-	return sm.CommitFragment(frag, n)
+	return nil
 }
 
 func (bc *BlockCache) NewBlock(blktype uint16, root bool, length uint16) *Block {

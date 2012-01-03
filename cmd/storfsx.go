@@ -9,8 +9,8 @@ import (
 	"math/rand"
 	"net/http"
 _	"net/http/pprof"
-_	"runtime"
-_	"time"
+	"runtime"
+	"time"
 )
 
 const (
@@ -321,8 +321,8 @@ func main() {
 		_ = <- testc
 	}
 
-//	runtime.GC()
-//	for {
-//		time.Sleep(1000000000)
-//	}
+	runtime.GC()
+	for {
+		time.Sleep(1000000000)
+	}
 }

@@ -11,6 +11,7 @@ import (
 const (
 	SGHMagic	= 0x48d2a89d
 	SGTMagic	= 0x59c1b98c
+
 	SGHeaderSize	= 32
 	SGTrailerSize	= 8
 	SGSealed	= 0xd60e5e36
@@ -309,12 +310,14 @@ func (sm *SegmentManager) nextSegment() error {
 	if err!=nil {
 		return err
 	}
+	sm.dc.Discard(s.nextfrag, s.nextfrag+SGTrailerSize)
 
 	// same, at the end of the segment
 	_, err = sm.disk.WriteAt(trailer[0:], int64(s.offset + uint64(s.size - SGTrailerSize)))
 	if err!=nil {
 		return err
 	}
+	sm.dc.Discard(s.offset + uint64(s.size - SGTrailerSize), s.offset + uint64(s.size))
 
 	sm.seg = nil
 	if s.next == ^uint64(0) {
@@ -349,8 +352,9 @@ func (sm *SegmentManager) CommitFragment(frag *Fragment, datasz uint32) error {
 	p = pint32(SGUnsealed, frag.raw[frag.size:])
 	_ = pint32(0, p)
 
-	debug("WriteAt len %d offset %d\n", len(frag.raw), frag.offset)
+	debug("WriteAt %d count %d\n", frag.offset, len(frag.raw))
 	_, err = sm.disk.WriteAt(frag.raw, int64(frag.offset))
+	sm.dc.Discard(frag.offset, frag.offset+uint64(len(frag.raw)))
 	sm.Lock()
 	sm.seg.frag = nil
 	sm.Unlock()

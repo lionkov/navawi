@@ -140,8 +140,12 @@ func (dc *DiskCache) Discard(start, end uint64) {
 	dc.Lock()
 	soff := start - start%uint64(dc.blksz)
 	eoff := end - end%uint64(dc.blksz) + uint64(dc.blksz)
-	for soff < eoff {
+	for ; soff < eoff; soff += uint64(dc.blksz) {
 		e := dc.cache[soff]
+		if e==nil {
+			continue
+		}
+
 		delete(dc.cache, soff)
 
 		// remove from the LRU list
@@ -156,8 +160,6 @@ func (dc *DiskCache) Discard(start, end uint64) {
 		} else {
 			dc.mru = e.lru
 		}
-
-		soff += uint64(dc.blksz)
 	}
 
 	dc.Unlock()

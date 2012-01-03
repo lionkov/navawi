@@ -733,7 +733,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 				sbp.prev(l)
 				if l==0 && sbp.entries[l].Block!=nil && sbp.entries[l].Type()!=ctype {
 					// different content type, can't merge
-					debug("can't merge with prev\n")
+//					debug("can't merge with prev\n")
 					sbp.next(l)
 				} else {
 					ds[0] = sbp.entries[l].Data
@@ -755,7 +755,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 				ebp.next(l)
 				if l==0 && ebp.entries[l].Type()!=ctype {
 					// different content type, can't merge
-					debug("can't merge with next\n")
+//					debug("can't merge with next\n")
 					ebp.prev(l)
 				} else {
 					ds[4] = ebp.entries[l].Data
@@ -888,6 +888,10 @@ func Read(root, offset uint64, data []byte) (int, error, uint16) {
 				ctype = BTHole
 			} else {
 //				debug("Data for %d bytes start %d end %d pos %d len %d\n", n, e.start, e.end, e.pos, len(e.Data))
+				if int(e.pos)+n > len(e.Data) {
+					return 0, errors.New(fmt.Sprintf("short block offset %d pos %d n %d len %d start %d\n", e.Offset, e.pos, n, len(e.Data), e.start)), BTHole
+				}
+
 				copy(data, e.Data[e.pos:e.pos+uint64(n)])
 			}
 
@@ -946,7 +950,7 @@ func Dump(root uint64, showlevels bool) (string, error) {
 		if e.Block == nil {
 			s = fmt.Sprintf("%s\t%06d hole %d\n", s, offset, n)
 		} else {
-			s = fmt.Sprintf("%s\t%06d data %d\n", s, offset, n)
+			s = fmt.Sprintf("%s\t%06d data %d blk %d\n", s, offset, n, e.Offset)
 		}
 
 		offset += n
