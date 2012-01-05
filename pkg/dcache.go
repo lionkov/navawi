@@ -64,6 +64,45 @@ func (dc *DiskCache) lruremove() {
 	delete(dc.cache, e.offset)
 }
 
+// called with lock held
+func (dc *DiskCache) lruadd(e *entry) {
+	if dc.mru!=nil {
+		dc.mru.mru = e
+	}
+
+	e.mru = nil
+	e.lru = dc.mru
+	if dc.mru != nil {
+		dc.mru.mru = e
+	}
+
+	dc.mru = e
+	if dc.lru==nil {
+		dc.lru = e
+	}
+}
+
+// called with lock held
+func (dc *DiskCache) lruupdate(e *entry) {
+	if e==nil {
+		return
+	}
+
+	if e.lru!=nil {
+		e.lru.mru = e.mru
+	} else {
+		dc.lru = e.mru
+	}
+
+	if e.mru!=nil {
+		e.mru.lru = e.lru
+	} else {
+		dc.mru = e.lru
+	}
+
+	dc.lruadd(e)
+}
+
 // count <= blksz
 func (dc *DiskCache) Read(offset uint64, count uint32) ([]byte, error) {
 	var en[2] *entry
@@ -75,8 +114,15 @@ func (dc *DiskCache) Read(offset uint64, count uint32) ([]byte, error) {
 
 	dc.Lock()
 	en[0], f0 = dc.cache[off]
+	if f0 {
+		dc.lruupdate(en[0])
+	}
+
 	if over {
 		en[1], f1 = dc.cache[off+uint64(dc.blksz)]
+		if f1 {
+			dc.lruupdate(en[1])
+		}
 	} else {
 		f1 = true
 	}
@@ -121,6 +167,7 @@ func (dc *DiskCache) Read(offset uint64, count uint32) ([]byte, error) {
 			}
 
 			dc.cache[en[0].offset] = en[0]
+			dc.lruadd(en[0])
 		}
 
 		if !f1 {
@@ -129,6 +176,7 @@ func (dc *DiskCache) Read(offset uint64, count uint32) ([]byte, error) {
 			}
 
 			dc.cache[en[1].offset] = en[1]
+			dc.lruadd(en[0])
 		}
 		dc.Unlock()
 	}

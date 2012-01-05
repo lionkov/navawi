@@ -30,9 +30,10 @@ const (	// Predefined Block Types
 )
 
 const (
-	MaxNoncommitSize = 10*1024*1024	// 10MB
-//	MaxCommitTime = 3000000000	// 3s
-	MaxCommitTime = 30000000000	// 30s
+//	MaxNoncommitSize = 10*1024*1024	// 10MB
+	MaxNoncommitSize = 1024*1024	// 1MB
+	MaxCommitTime = 3000000000	// 3s
+//	MaxCommitTime = 30000000000	// 30s
 )
 
 const (
@@ -41,6 +42,7 @@ const (
 )
 
 type Block struct {
+	sync.RWMutex		// protects Data
 	Offset		uint64	// block offset, if odd not committed to disk
 
 	// Data Layout on disk
@@ -54,7 +56,7 @@ type Block struct {
 	// uncommitted blocks only
 	bt		DataType
 	ucprev, ucnext	*Block	// list of uncommitted blocks
-	coffset	uint64		// BlockCache.coffset at the time the block is stored
+	coffset		uint64	// BlockCache.coffset at the time the block is stored
 	blkref		[]uint64// list of IDs of blocks referenced by the block
 	color		int	// for garbage collection
 
@@ -96,6 +98,7 @@ func NewBlockCache(dc *DiskCache, disk *os.File, maxcount uint32) (*BlockCache, 
 	bc.maxcount = maxcount
 	bc.cache = make(map[uint64] *Block)
 	bc.ucoffset = 1	// should be odd!
+	bc.ocoffset = 1
 	bc.liveblocks = make(map[uint64] *Block)
 	bc.maxucsize = MaxNoncommitSize
 	bc.commitchan = make(chan chan bool)
@@ -193,6 +196,62 @@ func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
 	return nil
 }
 
+// called with bc lock held
+func (bc *BlockCache) lrucheck() {
+	m := make(map[string] *Block)
+	for b := bc.mru; b != nil; b = b.lru {
+		s := fmt.Sprintf("%p", b)
+		if m[s] != nil {
+			fmt.Printf("b %p offset %d ucid %d\n", b, b.Offset, b.ucid)
+			var s *string
+			*s = "boo"
+		}
+		m[s] = b
+	}
+}
+
+// called with bc lock held
+func (bc *BlockCache) lruadd(b *Block) {
+	b.mru = nil
+	b.lru = bc.mru
+	if bc.mru!=nil {
+		bc.mru.mru = b
+	}
+
+	bc.mru = b
+	if bc.lru==nil {
+		bc.lru = b
+	}
+
+//	bc.lrucheck()
+}
+
+// called with bc lock held
+func (bc *BlockCache) lruremove(b *Block) {
+	if b.lru!=nil {
+		b.lru.mru = b.mru
+	} else {
+		bc.lru = b.mru
+	}
+
+	if b.mru!=nil {
+		b.mru.lru = b.lru
+	} else {
+		bc.mru = b.lru
+	}
+
+	b.lru = nil
+	b.mru = nil
+
+//	bc.lrucheck()
+}
+
+// called with bc lock held
+func (bc *BlockCache) lruupdate(b *Block) {
+	bc.lruremove(b)
+	bc.lruadd(b)
+}
+
 // make space for a new block in the cache
 // called with bc lock held
 func (bc *BlockCache) makeSpace() {
@@ -203,13 +262,7 @@ func (bc *BlockCache) makeSpace() {
 		}
 
 		delete(bc.cache, db.Offset)
-		if db.mru != nil {
-			db.mru.lru = nil
-		} else {
-			db.mru = nil
-		}
-
-		bc.lru = db.mru
+		bc.lruremove(db)
 	}
 }
 
@@ -233,7 +286,7 @@ func (bc *BlockCache) Get(offset uint64) (*Block, error) {
 		// 1. no reading from the disk
 		// 2. not in the lru list
 		if b==nil {
-			debug("**** uncommitted block %d not found\n", offset)
+			fmt.Printf("**** uncommitted block %d not found\n", offset)
 			err = errors.New(fmt.Sprintf("uncommitted block %d not found", offset))
 
 			var s *string
@@ -244,23 +297,8 @@ func (bc *BlockCache) Get(offset uint64) (*Block, error) {
 		return b, err
 	}
 
-	if b!=nil {
-		// move to the top of the LRU list
-		if b.lru!=nil {
-			b.lru.mru = b.mru
-		} else {
-			bc.lru = b.mru
-		}
-
-		if b.mru!=nil {
-			b.mru.lru = b.lru
-		} else {
-			bc.mru = b.lru
-		}
-
-		b.lru = bc.mru
-		b.mru = nil
-		bc.mru = b
+	if b!=nil && (b.lru!=nil || bc.lru==b) {
+		bc.lruupdate(b)
 	}
 	bc.Unlock()
 
@@ -273,9 +311,7 @@ func (bc *BlockCache) Get(offset uint64) (*Block, error) {
 
 		bc.Lock()
 		bc.makeSpace()
-		b.lru = bc.mru
-		b.mru = nil
-		bc.mru = b
+		bc.lruadd(b)
 		bc.cache[offset] = b
 		bc.Unlock()
 	} else if b.Data == nil {
@@ -286,15 +322,6 @@ func (bc *BlockCache) Get(offset uint64) (*Block, error) {
 		if err!=nil {
 			return nil, err
 		}
-
-		bc.Lock()
-		bc.makeSpace()
-		b.lru = bc.mru
-		bc.mru = b
-		if bc.lru == nil {
-			bc.lru = b
-		}
-		bc.Unlock()
 	}
 
 	return b, nil
@@ -320,7 +347,7 @@ func (bc *BlockCache) store(b *Block, live bool, blkref []uint64) error {
 		return bc.err
 	}
 
-	b.coffset = bc.coffset
+//	b.coffset = bc.coffset
 	bc.cache[b.Offset] = b
 	b.ucprev = bc.uclast
 	b.ucnext = nil
@@ -433,7 +460,7 @@ func (bc *BlockCache) gc() {
 
 // called with bc lock held
 func (bc *BlockCache) mark(b *Block) {
-	if b.color == CWhite {
+	if b.color == CWhite || b.Offset%2 == 0 {
 		return
 	}
 
@@ -449,6 +476,7 @@ func (bc *BlockCache) mark(b *Block) {
 
 	if b.blkref==nil {
 //		debug("BlockCache.mark %d\n", b.Offset)
+		// it is safe to access the data without locking, mark is called in the same thread as commit
 		b.blkref = b.bt.Files(b.Data)
 	}
 
@@ -461,9 +489,9 @@ func (bc *BlockCache) mark(b *Block) {
 			// mark only uncommitted blocks
 			bb := bc.cache[bs[i]]
 			if bb==nil {
-				debug("block with id %d doesn't exist\n", bs[i])
+				fmt.Printf("block with id %d doesn't exist b.Offset %d bc.ocoffset %d b.coffset %d\n", bs[i], b.Offset, bc.ocoffset, b.coffset)
 			}
-			bc.mark(bc.cache[bs[i]])
+			bc.mark(bb)
 		}
 	}
 }
@@ -488,7 +516,7 @@ func (bc *BlockCache) commit(force bool) error {
 //	debug("BlockCache.commit frag size %v len(Data) %v\n", frag.size, len(frag.Data))
 	offset := frag.DataOffset
 	count := uint32(len(frag.Data))
-	c1 := bc.ocoffset
+	c1 := bc.coffset
 	n := uint32(0)
 	sb := bc.ucfirst
 	for b = sb; b!=nil && n<count ; b = b.ucnext {
@@ -505,7 +533,13 @@ func (bc *BlockCache) commit(force bool) error {
 		bc.cache[b.Offset] = b
 		offset += uint64(m) + BTHeaderSize
 		n += m + BTHeaderSize
-		c1 = b.coffset
+		if c1 > b.coffset {
+			if b.coffset == 0 {
+				fmt.Printf("block %d coffset %d\n", b.Offset, b.coffset)
+			}
+
+			c1 = b.coffset
+		}
 	}
 
 	if b!=nil {
@@ -531,7 +565,11 @@ func (bc *BlockCache) commit(force bool) error {
 	p := buf
 	for bb:=sb; bb!=b; bb = bb.ucnext {
 		if bb.bt != nil {
+			// the only place where the content of the block can change
+			bb.Lock()
 			bb.bt.Commit(bb.Data)
+			bb.coffset = bc.coffset
+			bb.Unlock()
 		}
 
 		m := bb.Length
@@ -553,6 +591,7 @@ func (bc *BlockCache) commit(force bool) error {
 
 	// remove uncommitted blocks with odd offsets from the cache
 	bc.Lock()
+	debug("BlockCache.commit: remove blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
 	for bc.ocoffset < c1 {
 		if bc.liveblocks[bc.ocoffset]==nil {
 //			debug("BlockCache.commit remove block %d from cache\n", c0)
@@ -561,15 +600,13 @@ func (bc *BlockCache) commit(force bool) error {
 
 		bc.ocoffset += 2
 	}
+	debug("BlockCache.commit: len(cache) after %d\n", len(bc.cache))
 
 	for bb:=sb; bb!=b; bb = bb.ucnext {
 		// add to the LRU list
+		bb.blkref = nil
 		bc.makeSpace()
-		bb.lru = bc.mru
-		bc.mru = bb
-		if bc.lru == nil {
-			bc.lru = bb
-		}
+		bc.lruadd(bb)
 	}
 	bc.Unlock()
 
@@ -590,6 +627,7 @@ func (bc *BlockCache) NewBlock(blktype uint16, root bool, length uint16) *Block 
 	}
 
 	b.Data = b.raw[BTHeaderSize:]
+	b.coffset = bc.coffset
 	bc.Lock()
 	b.Offset = bc.ucoffset
 	bc.ucoffset += 2
@@ -654,6 +692,37 @@ func (bc *BlockCache) RemoveLiveBlock(b *Block) {
 	delete(bc.liveblocks, b.ucid)
 	delete(bc.cache, b.ucid)
 	bc.Unlock()
+}
+
+func (bc *BlockCache) Stats() string {
+	bc.Lock()
+	s := fmt.Sprintf("cache entries: %d\n", len(bc.cache))
+	n := 0
+	for offset, _ := range(bc.cache) {
+		if offset%2==0 {
+			n++
+		}
+	}
+	s = fmt.Sprintf("%scommitted entries: %d\n", s, n)
+
+	n = 0
+	for b := bc.mru; b != nil; b = b.lru {
+		n++
+	}
+	s = fmt.Sprintf("%sMRU list size: %d\n", s, n)
+
+	n = 0
+	for b := bc.lru; b != nil; b = b.mru {
+		n++
+	}
+	s = fmt.Sprintf("%sLRU list size: %d\n", s, n)
+	bc.Unlock()
+
+	return s
+}
+
+func Stats() string {
+	return bc.Stats()
 }
 
 func (b *Block) SetRoot(root bool) {

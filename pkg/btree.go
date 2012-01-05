@@ -107,6 +107,7 @@ func find(root uint64, offset uint64) (bp *BTPath, err error) {
 		}
 
 		e.entnum = len(b.Data) / BTEntrySize
+		b.RLock()
 		pos, start, end = search(start, offset, b.Data)
 //		debug("find: level %d pos %d start %d end %d\n", l, pos, start, end)
 		e.pos = uint64(pos)
@@ -117,6 +118,7 @@ func find(root uint64, offset uint64) (bp *BTPath, err error) {
 		if b!=nil {
 			blk, _ = gint64(b.Data[pos*BTEntrySize:])
 		}
+		b.RUnlock()
 
 		if blk==0 {
 			b = nil
@@ -159,8 +161,10 @@ func (bp *BTPath) next(level int) (bool, error) {
 	e := &bp.entries[l]
 	e.pos++
 //	debug("BTPath.next l %d e.pos %d e.entnum %d len %d\n", l, e.pos, e.entnum, len(e.Data))
+	e.RLock()
 	blk, p := gint64(e.Data[e.pos*BTEntrySize:])
 	sz, _ := gint64(p)
+	e.RUnlock()
 //	debug("BTPath.next blk %v sz %v\n", blk, sz)
 	e.start += e.end
 	e.end += e.start + sz
@@ -184,8 +188,10 @@ func (bp *BTPath) next(level int) (bool, error) {
 			e.pos = 0
 			e.entnum = len(b.Data) / BTEntrySize
 			if l>1 {
+				b.RLock()
 				blk, p = gint64(b.Data)
 				sz, _ = gint64(p)
+				b.RUnlock()
 			}
 
 			e.Block = b
@@ -216,8 +222,10 @@ func (bp *BTPath) nextSize(level int) (int, error) {
 	}
 
 	e := &bp.entries[l]
+	e.RLock()
 	blk, p := gint64(e.Data[(e.pos+1)*BTEntrySize:])
 	sz, _ := gint64(p)
+	e.RUnlock()
 //	debug("nextSize: level %d pos %d entnum %d sz %d\n", l, e.pos, e.entnum, sz)
 
 	for ; l>level+1; l-- {
@@ -227,8 +235,10 @@ func (bp *BTPath) nextSize(level int) (int, error) {
 			return 0, err
 		}
 
+		b.RLock()
 		blk, p = gint64(b.Data)
 		sz, _ = gint64(p)
+		b.RUnlock()
 		bc.Release(b)
 	}
 
@@ -268,8 +278,10 @@ func (bp *BTPath) prev(level int) (bool, error) {
 
 	e := &bp.entries[l]
 	e.pos--
+	e.RLock()
 	blk, p := gint64(e.Data[e.pos*BTEntrySize:])
 	sz, _ := gint64(p)
+	e.RUnlock()
 	e.start -= sz
 	e.end -= sz
 //	debug("prev: l %d bp.levels %d pos %d blk %d sz %d\n", l, bp.levels, e.pos, blk, sz)
@@ -293,8 +305,10 @@ func (bp *BTPath) prev(level int) (bool, error) {
 			e.Block = b
 			if l > 1 {
 				e.pos = uint64(len(b.Data) / BTEntrySize - 1)
+				b.RLock()
 				blk, p = gint64(b.Data[e.pos*BTEntrySize:])
 				sz, _ = gint64(p)
+				b.RUnlock()
 				e.start -= sz
 				e.end -= sz
 			} else {
@@ -332,8 +346,10 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 
 	e := &bp.entries[l]
 	pos := e.pos - 1
+	e.RLock()
 	blk, p := gint64(e.Data[pos*BTEntrySize:])
 	sz, _ := gint64(p)
+	e.RUnlock()
 
 //	debug("prevSize: l %d bp.levels %d pos %d blk %d sz %d\n", l, bp.levels, pos, blk, sz)
 	for ; l > level+1; l-- {
@@ -345,8 +361,10 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 
 		if l > 1 {
 			en := len(b.Data) / BTEntrySize
+			b.RLock()
 			blk, p = gint64(b.Data[(en - 1)*BTEntrySize:])
 			sz, _ = gint64(p)
+			b.RUnlock()
 		}
 
 		bc.Release(b)
@@ -482,10 +500,13 @@ func (bp *BTPath) seek(offset uint64) error {
 		e.start = base
 		e.end = end
 		if pos < e.entnum {
+			b.RLock()
 			blk, _ := gint64(b.Data[pos*BTEntrySize:])
+			b.RUnlock()
 			if blk!=0 {
 				var err error
 
+//				debug("BTPath.seek: %d get %d\n", b.Offset, blk)
 				b, err = bc.Get(blk)
 				if err!=nil {
 					return err
@@ -518,6 +539,7 @@ func blockSize(b *Block) uint64 {
 	}
 
 	total := uint64(0)
+	b.RLock()
 	for p:=b.Data; len(p) >= BTEntrySize; {
 		var sz uint64
 
@@ -526,13 +548,14 @@ func blockSize(b *Block) uint64 {
 		sz, p = gint64(p)
 		total += sz
 	}
+	b.RUnlock()
 
 //	debug("blockSize: %d %d %v\n", b.Offset, total, b.Data)
 	return total
 }
 
 // copy data from the multiple []byte slices to a list of blocks of type ctype
-func copyToBlocks(ds [][]byte, datasz int, ctype uint16, maxblksz int) []*Block {
+func copyToBlocks(ds [][]byte, bs []*Block, datasz int, ctype uint16, maxblksz int) []*Block {
 //	debug("copyToBlocks ds %v datasz %d\n", ds, datasz)
 	bnum := datasz / maxblksz
 	if datasz%maxblksz != 0 {
@@ -540,9 +563,28 @@ func copyToBlocks(ds [][]byte, datasz int, ctype uint16, maxblksz int) []*Block 
 	}
 
 	blks := make([]*Block, bnum)
+	b := bs[0]
+	if b != nil {
+		b.RLock()
+	}
+
 	for di, bi, dpos, bpos := 0, 0, 0, 0; datasz > 0; {
 		if ds[di] == nil || len(ds[di]) == 0 {
+			if b != nil {
+				b.RUnlock()
+				b = nil
+			}
+
 			di++
+			if di < len(bs) {
+				b = bs[di]
+				if b != nil {
+					b.RLock()
+				}
+			} else {
+				b = nil
+			}
+
 			continue
 		}
 
@@ -558,17 +600,39 @@ func copyToBlocks(ds [][]byte, datasz int, ctype uint16, maxblksz int) []*Block 
 
 		m := copy(blks[bi].Data[bpos:], ds[di][dpos:])
 		bpos += m
+
+		if b!=nil && b.coffset < blks[bi].coffset {
+			blks[bi].coffset = b.coffset
+		}
+
 		if len(blks[bi].Data) <= bpos {
 			bi++
 		}
 
 		dpos += m
 		if len(ds[di]) <= dpos {
+			if b != nil {
+				b.RUnlock()
+			}
+
 			di++
+			if di < len(bs) {
+				b = bs[di]
+				if b != nil {
+					b.RLock()
+				}
+			} else {
+				b = nil
+			}
+
 			dpos = 0
 		}
 
 		datasz -= m
+	}
+
+	if b != nil {
+		b.RUnlock()
 	}
 
 	return blks
@@ -671,14 +735,17 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		//	- 4 - data block that is just after the currently overwritten block (if it is too small and len(data) == count)
 		datasz := 0
 		ds := make([][]byte, 5)	// prev-block, left-overwritten, data, right-overwritten, next-block
+		bs := make([]*Block, 5)
 		ds[2] = data
 		if data != nil {
 			datasz = len(data)
 		}
 
+		lb := (*Block)(nil)
 		lbuf := []byte(nil)
 		if se.Block != nil && se.pos > 0 {
 //			debug("partially overwritten at the beginning: level %d len(e.Data) %d e.start %v e.end %v pos %v\n", l, len(se.Data), se.start, se.end, se.pos)
+			lb = se.Block
 			if l==0 {
 				lbuf = se.Data[0:se.pos]
 			} else if se.pos > 0 {
@@ -690,13 +757,17 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		// if no hole on the left, combine the left fragment with the data
 		if lholesz==0 && se.Block!=nil && ctype==se.Type() {
 			ds[1] = lbuf
+			bs[1] = lb
 			lbuf = nil
+			lb = nil
 			datasz += len(ds[1])
 		}
 
+		rb := (*Block)(nil)
 		rbuf := []byte(nil)
 		if ee.Block != nil {
 //			debug("partially overwritten at the end: len(e.Data) %d e.start %v e.end %v end %v pos %v\n", len(ee.Data), ee.start, ee.end, end, ee.pos)
+			rb = ee.Block
 			if l==0 {
 				if ee.pos < uint64(len(ee.Data)) {
 					rbuf = ee.Data[ee.pos:]
@@ -718,7 +789,9 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 //		}
 		if rholesz == 0 && ee.Block!=nil && ctype==ee.Type() {
 			ds[3] = rbuf
+			bs[3] = rb
 			rbuf = nil
+			rb = nil
 			datasz += len(ds[3])
 		}
 
@@ -737,6 +810,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 					sbp.next(l)
 				} else {
 					ds[0] = sbp.entries[l].Data
+					bs[0] = sbp.entries[l].Block
 					datasz += len(ds[0])
 					start = sbp.entries[l].start
 				}
@@ -759,6 +833,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 					ebp.prev(l)
 				} else {
 					ds[4] = ebp.entries[l].Data
+					bs[4] = ebp.entries[l].Block
 					datasz += len(ds[4])
 					end = ebp.entries[l].start + uint64(len(ds[4]))
 				}
@@ -767,12 +842,14 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		}
 
 //		debug("Write: ds %v\n", ds)
-		blks := copyToBlocks(ds, datasz, ctype, maxblksz)
+		blks := copyToBlocks(ds, bs, datasz, ctype, maxblksz)
 		bnum := len(blks)
 		lblk := (*Block)(nil)
 		if lbuf!=nil {
 			lblk = bc.NewBlock(se.Type(), false, uint16(len(lbuf)))
+			lb.RLock()
 			copy(lblk.Data, lbuf)
+			lb.RUnlock()
 			bnum++
 //			debug("lblk %p\n", lblk)
 		}
@@ -788,7 +865,9 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 		rblk := (*Block)(nil)
 		if rbuf!=nil {
 			rblk = bc.NewBlock(ee.Type(), false, uint16(len(rbuf)))
+			rb.RLock()
 			copy(rblk.Data, rbuf)
+			rb.RUnlock()
 			bnum++
 //			debug("rblk %p %v\n", rblk, rblk.Data)
 		}
