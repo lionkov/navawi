@@ -661,7 +661,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	var rootblk *Block
 
 
-//	debug("Write root %v start %v end %v count %d\n", root, start, end, count)
+	debug("Write root %v start %v end %v count %d\n", root, start, end, count)
 	sbp, err := find(root, start)
 	if err != nil {
 		return 0, err

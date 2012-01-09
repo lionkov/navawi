@@ -30,10 +30,8 @@ const (	// Predefined Block Types
 )
 
 const (
-//	MaxNoncommitSize = 10*1024*1024	// 10MB
-	MaxNoncommitSize = 1024*1024	// 1MB
-	MaxCommitTime = 3000000000	// 3s
-//	MaxCommitTime = 30000000000	// 30s
+	MaxNoncommitSize = 64*1024*1024	// 10MB
+	MaxCommitTime = 30000000000	// 30s
 )
 
 const (
@@ -98,6 +96,7 @@ func NewBlockCache(dc *DiskCache, disk *os.File, maxcount uint32) (*BlockCache, 
 	bc.maxcount = maxcount
 	bc.cache = make(map[uint64] *Block)
 	bc.ucoffset = 1	// should be odd!
+	bc.coffset = 1
 	bc.ocoffset = 1
 	bc.liveblocks = make(map[uint64] *Block)
 	bc.maxucsize = MaxNoncommitSize
@@ -339,6 +338,11 @@ func (bc *BlockCache) Release(b *Block) {
 // block type
 // called with bc lock held
 func (bc *BlockCache) store(b *Block, live bool, blkref []uint64) error {
+	if b.coffset == 0 {
+		fmt.Printf("block %d coffset 0\n", b.Offset)
+		*((*string)(nil)) = "boo"
+	}
+
 	p := pint32(BTMagic, b.raw)
 	p = pint16(b.Length, p)
 	p = pint16(b.blktype, p)
@@ -502,6 +506,24 @@ func (bc *BlockCache) commit(force bool) error {
 	bc.Lock()
 	bc.gc()
 	if bc.ucsize==0 || (!force && bc.ucsize < bc.maxucsize) {
+		if bc.ocoffset < bc.coffset {
+			c1 := bc.coffset
+			for b := bc.ucfirst; b != nil; b = b.ucnext {
+				if c1 > b.coffset {
+					c1 = b.coffset
+				}
+			}
+
+//			debug("BlockCache.commit: remove blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
+			for bc.ocoffset <= c1 {
+				if bc.liveblocks[bc.ocoffset]==nil {
+					delete(bc.cache, bc.ocoffset)
+				}
+
+				bc.ocoffset += 2
+			}
+		}
+
 		bc.Unlock()
 		return nil
 	}
@@ -534,10 +556,6 @@ func (bc *BlockCache) commit(force bool) error {
 		offset += uint64(m) + BTHeaderSize
 		n += m + BTHeaderSize
 		if c1 > b.coffset {
-			if b.coffset == 0 {
-				fmt.Printf("block %d coffset %d\n", b.Offset, b.coffset)
-			}
-
 			c1 = b.coffset
 		}
 	}
@@ -575,12 +593,6 @@ func (bc *BlockCache) commit(force bool) error {
 		m := bb.Length
 		m += m%2
 		copy(p, bb.raw[0:bb.Length + BTHeaderSize])
-//		debug("BlockCache.commit offset %v data %v\n", bb.Offset, bb.raw[0:bb.Length+BTHeaderSize])
-//		debug("BlockCache.commit offset %v block %p count %v remaining %v\n", bb.Offset, bb, m+BTHeaderSize, len(p))
-		if int(m+BTHeaderSize) > len(p) {
-			fmt.Printf("BlockCache.commit: m+BTHeaderSize %d len(p) %d\n", m+BTHeaderSize, len(p))
-		}
-
 		p = p[m+BTHeaderSize:]
 	}
 
@@ -591,16 +603,22 @@ func (bc *BlockCache) commit(force bool) error {
 
 	// remove uncommitted blocks with odd offsets from the cache
 	bc.Lock()
-	debug("BlockCache.commit: remove blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
-	for bc.ocoffset < c1 {
+
+	// first make sure that c1 is the min of the rest of the coffset for the uncommitted blocks
+	for b := bc.ucfirst; b != nil; b = b.ucnext {
+		if c1 > b.coffset {
+			c1 = b.coffset
+		}
+	}
+
+//	debug("BlockCache.commit: remove blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
+	for bc.ocoffset <= c1 {
 		if bc.liveblocks[bc.ocoffset]==nil {
-//			debug("BlockCache.commit remove block %d from cache\n", c0)
 			delete(bc.cache, bc.ocoffset)
 		}
 
 		bc.ocoffset += 2
 	}
-	debug("BlockCache.commit: len(cache) after %d\n", len(bc.cache))
 
 	for bb:=sb; bb!=b; bb = bb.ucnext {
 		// add to the LRU list
@@ -652,6 +670,9 @@ func (bc *BlockCache) RemoveLiveBlock(b *Block) {
 		return
 	}
 
+	ucid := b.ucid
+/*	probably not necessary anymore
+
 	// check all uncommitted blocks for references to ucid
 	bs := make([]*Block, 0, 16)
 	for ub := bc.ucfirst; ub != nil; ub = ub.ucnext {
@@ -679,7 +700,10 @@ func (bc *BlockCache) RemoveLiveBlock(b *Block) {
 			}
 		}
 	}
+*/
 	b.ucid = 0
+
+/*	probably unnecessary anymore
 	bc.Unlock()
 
 	// is that safe? should be, even if commit is running, it will do the same thing
@@ -689,8 +713,9 @@ func (bc *BlockCache) RemoveLiveBlock(b *Block) {
 	}
 
 	bc.Lock()
-	delete(bc.liveblocks, b.ucid)
-	delete(bc.cache, b.ucid)
+*/
+	delete(bc.liveblocks, ucid)
+	delete(bc.cache, ucid)
 	bc.Unlock()
 }
 
