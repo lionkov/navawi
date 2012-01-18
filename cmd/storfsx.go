@@ -9,8 +9,8 @@ import (
 	"math/rand"
 	"net/http"
 _	"net/http/pprof"
-	"runtime"
-	"time"
+_	"runtime"
+_	"time"
 )
 
 const (
@@ -29,10 +29,14 @@ type Op struct {
 }
 
 type File struct {
-	root	uint64
-	datalen	uint64
-	data	[]byte
-	ops 	[]*Op
+	root		uint64
+	datalen		uint64
+	data		[]byte
+	ops 		[]*Op
+	readnum		int		// number of read operations
+	writenum	int		// number of write operations
+	readlen		uint64		// number of bytes read
+	writelen	uint64		// number of bytes written
 }
 
 var debug = flag.Bool("d", false, "debug output for all operations")
@@ -46,6 +50,7 @@ var threadnum = flag.Int("t", 1, "number of op threads")
 var dbgFrom = flag.Int("df", -1, "turn on Gostor debugging at the specified operation number")
 var dbgTo = flag.Int("dt", -1, "turn off Gostor debugging at the specified operation number")
 var dump = flag.Uint("dump", math.MaxUint32, "attach dump to each write operation past the specified operation number")
+var check = flag.Bool("C", true, "keep copy of the content of the file in memory for correctness checks")
 
 var testc chan error
 
@@ -73,12 +78,16 @@ func (f *File) Read(op *Op) error {
 		p = p[count:]
 		o += uint64(count)
 		l += count
+		f.readlen += uint64(count)
 	}
 
-	// check if the content is the same
-	for i:=0; i<l; i++ {
-		if f.data[int(op.start)+i] != buf[i] {
-			return errors.New(fmt.Sprintf("wrong data: offset %d got %x should be %x\n", int(op.start)+i, buf[i], f.data[int(op.start)+i]))
+	f.readnum++
+	if *check {
+		// check if the content is the same
+		for i:=0; i<l; i++ {
+			if f.data[int(op.start)+i] != buf[i] {
+				return errors.New(fmt.Sprintf("wrong data: offset %d got %x should be %x\n", int(op.start)+i, buf[i], f.data[int(op.start)+i]))
+			}
 		}
 	}
 
@@ -126,33 +135,39 @@ func (f *File) Write(op *Op) error {
 		return err
 	}
 
-	if op.start > int64(f.datalen) {
-		for i := uint64(f.datalen); i < uint64(op.start); i++ {
+	f.writelen += uint64(op.len)
+	f.writenum++
+	if *check {
+		if op.start > int64(f.datalen) {
+			for i := uint64(f.datalen); i < uint64(op.start); i++ {
+				f.data[i] = 0
+			}
+		}
+
+		if op.end < int64(f.datalen) {
+			copy(f.data[op.start + int64(op.count):], f.data[op.end:])
+		}
+
+		copy(f.data[op.start:], buf)
+		for i := op.start + int64(op.len); i < op.start+int64(op.count); i++ {
 			f.data[i] = 0
 		}
+
+		f.datalen = uint64(filesz)
 	}
 
-	if op.end < int64(f.datalen) {
-		copy(f.data[op.start + int64(op.count):], f.data[op.end:])
-	}
-
-	copy(f.data[op.start:], buf)
-	for i := op.start + int64(op.len); i < op.start+int64(op.count); i++ {
-		f.data[i] = 0
-	}
-
-	f.datalen = uint64(filesz)
 	gostor.Forget(f.root)
 	f.root = newroot
 	return err
 }
 
 func (f *File) checkFile() error {
-//	fmt.Printf("checkFile\n")
+	if !*check {
+		return nil
+	}
+
 	offset := uint64(0)
 	buf := make([]byte, 1024*1024)
-//	s, _ := gostor.Dump(f.root)
-//	fmt.Printf("%s", s)
 	for offset < f.datalen {
 		n, err, _ := gostor.Read(f.root, offset, buf)
 		if err != nil {
@@ -183,7 +198,10 @@ func (f *File) test(id uint) (err error) {
 	op.count = rand.Int31n(int32(*oplen))
 	op.len = rand.Int31n(int32(*oplen))
 
-	f.ops = append(f.ops, op)
+	if *check {
+		f.ops = append(f.ops, op)
+	}
+
 	switch op.op {
 	case Opread:
 		op.start = rand.Int63n(*flen + int64(*oplen) * 2)
@@ -223,6 +241,10 @@ func (f *File) test(id uint) (err error) {
 }
 
 func (f *File) checkSize() error {
+	if !*check {
+		return nil
+	}
+
 	sz, err := gostor.Size(f.root)
 	if err!=nil {
 		return err
@@ -239,7 +261,10 @@ func testloop() {
 	var err error
 
 	f := new(File)
-	f.data = make([]byte, *flen)
+	if *check {
+		f.data = make([]byte, *flen)
+	}
+
 	for i := 0; i < *numop; i++ {
 		if i==*dbgFrom {
 			gostor.SetDebug(true)
@@ -274,6 +299,7 @@ func testloop() {
 	if err==nil {
 		id, _ := gostor.Id(f.root)
 		fmt.Printf("Root %d\n", id)
+		fmt.Printf("Reads %d (%d bytes) Writes %d (%d bytes)\n", f.readnum, f.readlen, f.writenum, f.writelen)
 		testc <- nil
 		return
 	}
@@ -321,6 +347,7 @@ func main() {
 		_ = <- testc
 	}
 
+/*
 	fmt.Printf("Before GC\n")
 	runtime.GC()
 	fmt.Printf("Before Stats\n")
@@ -328,4 +355,5 @@ func main() {
 	for {
 		time.Sleep(1000000000)
 	}
+*/
 }
