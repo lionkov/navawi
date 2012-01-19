@@ -9,8 +9,8 @@ import (
 	"math/rand"
 	"net/http"
 _	"net/http/pprof"
-_	"runtime"
-_	"time"
+	"runtime"
+	"time"
 )
 
 const (
@@ -347,13 +347,15 @@ func main() {
 		_ = <- testc
 	}
 
+
 /*
 	fmt.Printf("Before GC\n")
 	runtime.GC()
 	fmt.Printf("Before Stats\n")
 	fmt.Printf("%s", gostor.Stats())
-	for {
-		time.Sleep(1000000000)
-	}
 */
+	for {
+		runtime.GC()
+		time.Sleep(10000000000)
+	}
 }

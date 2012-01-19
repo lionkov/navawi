@@ -101,7 +101,7 @@ func Forget(root uint64) error {
 		return errors.New("not root")
 	}
 
-	bc.RemoveLiveBlock(b)
+	bc.RemoveLiveBlock(b.Offset)
 	return nil
 }
 

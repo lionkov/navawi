@@ -49,7 +49,6 @@ type Block struct {
 	blktype		uint16	// block type
 	Data		[]byte
 	raw		[]byte	// raw data, including the header
-	ucid		uint64	// uncommitted id, if any
 
 	// uncommitted blocks only
 	bt		DataType
@@ -69,6 +68,7 @@ type BlockCache struct {
 	maxcount	uint32
 	maxucsize	uint32
 	cache		map[uint64] *Block
+	ucache		map[uint64] uint64	// mapping between uncommitted id that can still be used and the commited one
 	lru, mru	*Block
 	dtypes		map[uint16] DataType
 	nullblk		*Block
@@ -79,7 +79,7 @@ type BlockCache struct {
 	ocoffset	uint64	// oldest fake offset that might be present in an uncommitted block content
 	ucfirst, uclast	*Block
 	ucsize		uint32	// size of the uncommitted data
-	liveblocks	map[uint64] *Block
+	liveblocks	map[uint64] bool
 	lastcommit	int64	// time of last commit
 	commitchan	chan chan bool
 }
@@ -95,10 +95,11 @@ func NewBlockCache(dc *DiskCache, disk *os.File, maxcount uint32) (*BlockCache, 
 	bc.dc = dc
 	bc.maxcount = maxcount
 	bc.cache = make(map[uint64] *Block)
+	bc.ucache = make(map[uint64] uint64)
 	bc.ucoffset = 1	// should be odd!
 	bc.coffset = 1
 	bc.ocoffset = 1
-	bc.liveblocks = make(map[uint64] *Block)
+	bc.liveblocks = make(map[uint64] bool)
 	bc.maxucsize = MaxNoncommitSize
 	bc.commitchan = make(chan chan bool)
 	bc.dtypes = make(map[uint16] DataType)
@@ -144,6 +145,38 @@ func (bc *BlockCache) commitproc() {
 		if c!=nil {
 			c<-true
 		}
+
+/*
+		bc.Lock()
+		n := 0
+		for o, _ := range bc.cache {
+			if o%2 == 1 {
+				n++
+			}
+		}
+
+		m := 0
+		for b := bc.lru; b != nil; b = b.mru {
+			m++
+		}
+
+		l := 0
+		for b := bc.mru; b != nil; b = b.lru {
+			l++
+		}
+
+		uf := 0
+		for b := bc.ucfirst; b != nil; b = b.ucnext {
+			uf++
+		}
+		ul := 0
+		for b := bc.uclast; b != nil; b = b.ucprev {
+			ul++
+		}
+		bc.Unlock()
+
+		fmt.Printf("len(cache) %d uncommitted %d len(ucache) %d mrulen %d lrulen %d ufirst %d ulast %d\n", len(bc.cache), n, len(bc.ucache), m, l, uf, ul)
+*/
 	}		
 }
 
@@ -201,7 +234,7 @@ func (bc *BlockCache) lrucheck() {
 	for b := bc.mru; b != nil; b = b.lru {
 		s := fmt.Sprintf("%p", b)
 		if m[s] != nil {
-			fmt.Printf("b %p offset %d ucid %d\n", b, b.Offset, b.ucid)
+			fmt.Printf("b %p offset %d\n", b, b.Offset)
 			var s *string
 			*s = "boo"
 		}
@@ -279,17 +312,21 @@ func (bc *BlockCache) Get(offset uint64) (*Block, error) {
 		return nil, bc.err
 	}
 
+again:
 	b := bc.cache[offset]
 	if offset%2 == 1 {
 		// uncommitted blocks are handled differently
-		// 1. no reading from the disk
-		// 2. not in the lru list
+		// 1. can be in the ucache
+		// 2. if not, no reading from the disk
+		// 3. not in the lru list
 		if b==nil {
-			fmt.Printf("**** uncommitted block %d not found\n", offset)
-			err = errors.New(fmt.Sprintf("uncommitted block %d not found", offset))
+			o := bc.ucache[offset]
+			if o != 0 {
+				offset = o
+				goto again
+			}
 
-			var s *string
-			*s = "boo"
+			panic(fmt.Sprintf("uncommitted block %d not found", offset))
 		}
 
 		bc.Unlock()
@@ -309,6 +346,7 @@ func (bc *BlockCache) Get(offset uint64) (*Block, error) {
 		}
 
 		bc.Lock()
+		b.coffset = bc.coffset
 		bc.makeSpace()
 		bc.lruadd(b)
 		bc.cache[offset] = b
@@ -330,7 +368,7 @@ func (bc *BlockCache) Ref(b *Block) {
 	// should it do anything ???
 }
 
-func (bc *BlockCache) Release(b *Block) {
+func (bc *BlockCache) Unref(b *Block) {
 	// should it do anything ???
 }
 
@@ -339,8 +377,7 @@ func (bc *BlockCache) Release(b *Block) {
 // called with bc lock held
 func (bc *BlockCache) store(b *Block, live bool, blkref []uint64) error {
 	if b.coffset == 0 {
-		fmt.Printf("block %d coffset 0\n", b.Offset)
-		*((*string)(nil)) = "boo"
+		panic(fmt.Sprintf("block %d coffset 0\n", b.Offset))
 	}
 
 	p := pint32(BTMagic, b.raw)
@@ -365,7 +402,7 @@ func (bc *BlockCache) store(b *Block, live bool, blkref []uint64) error {
 	bc.ucsize += uint32(b.Length + b.Length%2) + BTHeaderSize
 	b.blkref = blkref
 	if live {
-		bc.liveblocks[b.Offset] = b
+		bc.liveblocks[b.Offset] = true
 	}
 
 	return nil
@@ -426,7 +463,8 @@ func (bc *BlockCache) checkCommit() {
 // called with bc lock held
 func (bc *BlockCache) gc() {
 	// mark
-	for _, b := range bc.liveblocks {
+	for offset, _ := range bc.liveblocks {
+		b := bc.cache[offset]
 //		debug("BlockCache.gc live block %p\n", b)
 		bc.mark(b)
 	}
@@ -489,13 +527,29 @@ func (bc *BlockCache) mark(b *Block) {
 	}
 
 	for bs, i := b.blkref, 0; i< len(bs); i++ {
-		if bs[i]%2 == 1 {
-			// mark only uncommitted blocks
-			bb := bc.cache[bs[i]]
-			if bb==nil {
-				fmt.Printf("block with id %d doesn't exist b.Offset %d bc.ocoffset %d b.coffset %d\n", bs[i], b.Offset, bc.ocoffset, b.coffset)
+		if bs[i]%2 == 0 {
+			continue
+		}
+
+		// mark only uncommitted blocks
+		bb := bc.cache[bs[i]]
+		if bb==nil {
+			o := bc.ucache[bs[i]]
+			if o==0 {
+				panic(fmt.Sprintf("block with id %d doesn't exist b.Offset %d bc.ocoffset %d b.coffset %d\n", bs[i], b.Offset, bc.ocoffset, b.coffset))
 			}
-			bc.mark(bb)
+
+			continue
+		}
+		bc.mark(bb)
+	}
+}
+
+// called with bc lock held
+func (bc *BlockCache) removeUncommitted(c1 uint64) {
+	for offset, _ := range bc.ucache {
+		if offset < c1 && !bc.liveblocks[offset] {
+			delete(bc.ucache, offset)
 		}
 	}
 }
@@ -514,14 +568,8 @@ func (bc *BlockCache) commit(force bool) error {
 				}
 			}
 
-//			debug("BlockCache.commit: remove blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
-			for bc.ocoffset <= c1 {
-				if bc.liveblocks[bc.ocoffset]==nil {
-					delete(bc.cache, bc.ocoffset)
-				}
-
-				bc.ocoffset += 2
-			}
+			debug("BlockCache.commit: remove blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
+			bc.removeUncommitted(c1)
 		}
 
 		bc.Unlock()
@@ -550,7 +598,13 @@ func (bc *BlockCache) commit(force bool) error {
 
 		debug("BlockCache.commit %d --> %d (%d)\n", b.Offset, offset, b.Length)
 		bc.coffset = b.Offset
-		b.ucid = b.Offset
+		bc.ucache[b.Offset] = offset
+		if bc.liveblocks[b.Offset] {
+			delete(bc.liveblocks, b.Offset)
+			bc.liveblocks[offset] = true
+		}
+
+		delete(bc.cache, b.Offset)
 		b.Offset = offset
 		bc.cache[b.Offset] = b
 		offset += uint64(m) + BTHeaderSize
@@ -563,6 +617,7 @@ func (bc *BlockCache) commit(force bool) error {
 	if b!=nil {
 		b.ucprev = nil
 		bc.ucfirst = b
+		b.ucprev = nil
 	} else {
 		bc.ucfirst = nil
 	}
@@ -611,20 +666,18 @@ func (bc *BlockCache) commit(force bool) error {
 		}
 	}
 
-//	debug("BlockCache.commit: remove blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
-	for bc.ocoffset <= c1 {
-		if bc.liveblocks[bc.ocoffset]==nil {
-			delete(bc.cache, bc.ocoffset)
-		}
+	debug("BlockCache.commit: remove blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
+	bc.removeUncommitted(c1)
+	bc.ocoffset = c1
+	for bb, bbnext :=sb, sb.ucnext; bb!=b; bb = bbnext {
+		bbnext = bb.ucnext
 
-		bc.ocoffset += 2
-	}
-
-	for bb:=sb; bb!=b; bb = bb.ucnext {
 		// add to the LRU list
 		bb.blkref = nil
 		bc.makeSpace()
 		bc.lruadd(bb)
+		bb.ucprev = nil
+		bb.ucnext = nil
 	}
 	bc.Unlock()
 
@@ -646,6 +699,10 @@ func (bc *BlockCache) NewBlock(blktype uint16, root bool, length uint16) *Block 
 
 	b.Data = b.raw[BTHeaderSize:]
 	b.coffset = bc.coffset
+	if bc.coffset==0 {
+		panic("bc.coffset == 0")
+	}
+
 	bc.Lock()
 	b.Offset = bc.ucoffset
 	bc.ucoffset += 2
@@ -654,68 +711,18 @@ func (bc *BlockCache) NewBlock(blktype uint16, root bool, length uint16) *Block 
 	return b
 }
 
-func (bc *BlockCache) AddLiveBlock(b *Block) {
+func (bc *BlockCache) AddLiveBlock(offset uint64) {
 	bc.Lock()
 //	debug("BlockCache.AddLiveBlock %p\n", b)
-	bc.liveblocks[b.Offset] = b
+	bc.liveblocks[offset] = true
 	bc.Unlock()
 }
 
-func (bc *BlockCache) RemoveLiveBlock(b *Block) {
+func (bc *BlockCache) RemoveLiveBlock(offset uint64) {
 //	debug("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
 	bc.Lock()
-	delete(bc.liveblocks, b.Offset)
-	if b.ucid==0 {
-		bc.Unlock()
-		return
-	}
-
-	ucid := b.ucid
-/*	probably not necessary anymore
-
-	// check all uncommitted blocks for references to ucid
-	bs := make([]*Block, 0, 16)
-	for ub := bc.ucfirst; ub != nil; ub = ub.ucnext {
-		btype := ub.Type()
-		if btype==BTData {
-			continue
-		}
-
-		if ub.bt==nil {
-			ub.bt = bc.dtypes[btype]
-		}
-
-		if ub.blkref==nil {
-			ub.blkref = ub.bt.Files(ub.Data)
-		}
-
-		if ub.blkref==nil {
-			continue
-		}
-
-		for _, bid := range ub.blkref {
-			if bid == b.ucid {
-				bs = append(bs, ub)
-				break
-			}
-		}
-	}
-*/
-	b.ucid = 0
-
-/*	probably unnecessary anymore
-	bc.Unlock()
-
-	// is that safe? should be, even if commit is running, it will do the same thing
-	for _, ub := range bs {
-		// replace with the new ID
-		ub.bt.Commit(ub.Data)
-	}
-
-	bc.Lock()
-*/
-	delete(bc.liveblocks, ucid)
-	delete(bc.cache, ucid)
+	delete(bc.liveblocks, offset)
+	delete(bc.ucache, offset)
 	bc.Unlock()
 }
 

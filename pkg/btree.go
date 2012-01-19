@@ -64,7 +64,7 @@ func find(root uint64, offset uint64) (bp *BTPath, err error) {
 
 	b, err = bc.Get(root)
 	if err!=nil {
-		bc.Release(b)
+		bc.Unref(b)
 		return nil, err
 	}
 
@@ -129,7 +129,7 @@ func find(root uint64, offset uint64) (bp *BTPath, err error) {
 		if err!=nil {
 			for i:=0; i<BTMaxLevels; i++ {
 				if bp.entries[i].Block != nil {
-					bc.Release(bp.entries[i].Block)
+					bc.Unref(bp.entries[i].Block)
 				}
 			}
 
@@ -182,7 +182,7 @@ func (bp *BTPath) next(level int) (bool, error) {
 				return false, err
 			}
 
-			bc.Release(e.Block)
+			bc.Unref(e.Block)
 			e.start = e.end
 			e.end = e.start + sz
 			e.pos = 0
@@ -239,7 +239,7 @@ func (bp *BTPath) nextSize(level int) (int, error) {
 		blk, p = gint64(b.Data)
 		sz, _ = gint64(p)
 		b.RUnlock()
-		bc.Release(b)
+		bc.Unref(b)
 	}
 
 	if l > 0 {
@@ -249,7 +249,7 @@ func (bp *BTPath) nextSize(level int) (int, error) {
 		}
 
 		sz = uint64(len(b.Data))
-		bc.Release(b)
+		bc.Unref(b)
 	} else if blk==0 {
 		sz = 0
 	}
@@ -301,7 +301,7 @@ func (bp *BTPath) prev(level int) (bool, error) {
 				return false, err
 			}
 
-			bc.Release(e.Block)
+			bc.Unref(e.Block)
 			e.Block = b
 			if l > 1 {
 				e.pos = uint64(len(b.Data) / BTEntrySize - 1)
@@ -367,7 +367,7 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 			b.RUnlock()
 		}
 
-		bc.Release(b)
+		bc.Unref(b)
 	}
 
 	if l > 0 {
@@ -377,7 +377,7 @@ func (bp *BTPath) prevSize(level int) (int, error) {
 		}
 
 		sz = uint64(len(b.Data))
-		bc.Release(b)
+		bc.Unref(b)
 	} else if blk==0 {
 		sz = 0
 	}
@@ -525,7 +525,7 @@ func (bp *BTPath) seek(offset uint64) error {
 
 func (bp *BTPath) Release() {
 	for i:=0; i<bp.levels; i++ {
-		bc.Release(bp.entries[i].Block)
+		bc.Unref(bp.entries[i].Block)
 		bp.entries[i].Block = nil
 	}
 }
@@ -602,6 +602,10 @@ func copyToBlocks(ds [][]byte, bs []*Block, datasz int, ctype uint16, maxblksz i
 		bpos += m
 
 		if b!=nil && b.coffset < blks[bi].coffset {
+			if b.coffset == 0 {
+				fmt.Printf("argh b.Offset %d\n", b.Offset)
+//				panic("argh ")
+			}
 			blks[bi].coffset = b.coffset
 		}
 
