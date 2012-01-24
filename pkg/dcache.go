@@ -4,6 +4,9 @@ import (
 _	"fmt"
 	"os"
 	"sync"
+	"io"
+	"fmt"
+	"net/http"
 )
 
 type DiskCache struct {
@@ -28,7 +31,33 @@ func NewDiskCache(d *os.File, blksz uint32, maxcount uint32) *DiskCache {
 	dc.maxcount = maxcount
 	dc.cache = make(map[uint64] *entry)
 
+	http.Handle("/gostor/dcache", dc)
 	return dc
+}
+
+func (dc *DiskCache) ServeHTTP(c http.ResponseWriter, r *http.Request) {
+	io.WriteString(c, fmt.Sprintf("<html><body><h1>Data Cache</h1>"))
+	defer io.WriteString(c, "</body></html>")
+
+	dc.Lock()
+	// LRU list
+	nl := 0
+	for e := dc.lru; e != nil; e = e.mru {
+		nl++
+	}
+
+	// MRU list
+	nm := 0
+	for e := dc.mru; e != nil; e = e.lru {
+		nm++
+	}
+
+	nc := len(dc.cache)
+	dc.Unlock()
+
+	io.WriteString(c, fmt.Sprintf("<p>LRU count: %d\n", nl))
+	io.WriteString(c, fmt.Sprintf("<p>MRU count: %d\n", nm))
+	io.WriteString(c, fmt.Sprintf("<p>Cache count: %d\n", nc))
 }
 
 func (dc *DiskCache) newEntry(offset uint64) (*entry, error) {
@@ -47,6 +76,20 @@ func (dc *DiskCache) newEntry(offset uint64) (*entry, error) {
 	return e, nil
 }
 
+// called with bc lock held
+func (dc *DiskCache) lrucheck() {
+	m := make(map[string] *entry)
+	n := 0
+	for e := dc.mru; e != nil; e = e.lru {
+		s := fmt.Sprintf("%p", e)
+		if m[s] != nil {
+			panic(fmt.Sprintf("e %p offset %d position %d\n", e, e.offset, n))
+		}
+		m[s] = e
+		n++
+	}
+}
+
 // called with lock held
 func (dc *DiskCache) lruremove() {
 	e := dc.lru
@@ -62,24 +105,24 @@ func (dc *DiskCache) lruremove() {
 
 	dc.lru = e.mru
 	delete(dc.cache, e.offset)
+	e.lru = nil
+	e.mru = nil
+//	dc.lrucheck()
 }
 
 // called with lock held
 func (dc *DiskCache) lruadd(e *entry) {
+	e.mru = nil
+	e.lru = dc.mru
 	if dc.mru!=nil {
 		dc.mru.mru = e
 	}
 
-	e.mru = nil
-	e.lru = dc.mru
-	if dc.mru != nil {
-		dc.mru.mru = e
-	}
-
 	dc.mru = e
-	if dc.lru==nil {
+	if dc.lru == nil {
 		dc.lru = e
 	}
+//	dc.lrucheck()
 }
 
 // called with lock held
@@ -101,6 +144,7 @@ func (dc *DiskCache) lruupdate(e *entry) {
 	}
 
 	dc.lruadd(e)
+//	dc.lrucheck()
 }
 
 // count <= blksz
@@ -176,7 +220,7 @@ func (dc *DiskCache) Read(offset uint64, count uint32) ([]byte, error) {
 			}
 
 			dc.cache[en[1].offset] = en[1]
-			dc.lruadd(en[0])
+			dc.lruadd(en[1])
 		}
 		dc.Unlock()
 	}
