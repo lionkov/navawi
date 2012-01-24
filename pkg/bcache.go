@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -82,6 +83,8 @@ type BlockCache struct {
 	liveblocks	map[uint64] bool
 	lastcommit	int64	// time of last commit
 	commitchan	chan chan bool
+
+	usfirst		*Block	// list of allocated, but not stored yet
 }
 
 type DataType interface {
@@ -234,9 +237,7 @@ func (bc *BlockCache) lrucheck() {
 	for b := bc.mru; b != nil; b = b.lru {
 		s := fmt.Sprintf("%p", b)
 		if m[s] != nil {
-			fmt.Printf("b %p offset %d\n", b, b.Offset)
-			var s *string
-			*s = "boo"
+			panic(fmt.Sprintf("b %p offset %d\n", b, b.Offset))
 		}
 		m[s] = b
 	}
@@ -377,15 +378,26 @@ func (bc *BlockCache) Unref(b *Block) {
 // called with bc lock held
 func (bc *BlockCache) store(b *Block, live bool, blkref []uint64) error {
 	if b.coffset == 0 {
-		panic(fmt.Sprintf("block %d coffset 0\n", b.Offset))
+		b.coffset = bc.coffset
 	}
 
+//	debug("b %d coffset %d btype %x\n", b.Offset, b.coffset, b.Type())
 	p := pint32(BTMagic, b.raw)
 	p = pint16(b.Length, p)
 	p = pint16(b.blktype, p)
 
 	if bc.err != nil {
 		return bc.err
+	}
+
+	if b.ucprev != nil {
+		b.ucprev.ucnext = b.ucnext
+	} else {
+		bc.usfirst = b.ucnext
+	}
+
+	if b.ucnext != nil {
+		b.ucnext.ucprev = b.ucprev
 	}
 
 //	b.coffset = bc.coffset
@@ -502,7 +514,7 @@ func (bc *BlockCache) gc() {
 
 // called with bc lock held
 func (bc *BlockCache) mark(b *Block) {
-	if b.color == CWhite || b.Offset%2 == 0 {
+	if b==nil || b.color == CWhite || b.Offset%2 == 0 {
 		return
 	}
 
@@ -568,7 +580,14 @@ func (bc *BlockCache) commit(force bool) error {
 				}
 			}
 
-			debug("BlockCache.commit: remove blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
+			for b := bc.usfirst; b != nil; b = b.ucnext {
+				c := atomic.LoadUint64(&b.coffset)
+				if c!=0 && c1 > c {
+					c1 = c
+				}
+			}
+
+			debug("BlockCache.commit: remove ! blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
 			bc.removeUncommitted(c1)
 		}
 
@@ -596,7 +615,7 @@ func (bc *BlockCache) commit(force bool) error {
 			break
 		}
 
-		debug("BlockCache.commit %d --> %d (%d)\n", b.Offset, offset, b.Length)
+		debug("BlockCache.commit %d (%d) --> %d (%d)\n", b.Offset, b.coffset, offset, b.Length)
 		bc.coffset = b.Offset
 		bc.ucache[b.Offset] = offset
 		if bc.liveblocks[b.Offset] {
@@ -666,7 +685,13 @@ func (bc *BlockCache) commit(force bool) error {
 		}
 	}
 
-	debug("BlockCache.commit: remove blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
+	for b := bc.usfirst; b != nil; b = b.ucnext {
+		c := atomic.LoadUint64(&b.coffset)
+		if c!=0 && c1 > c {
+			c1 = c
+		}
+	}
+	debug("BlockCache.commit: remove @ blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
 	bc.removeUncommitted(c1)
 	bc.ocoffset = c1
 	for bb, bbnext :=sb, sb.ucnext; bb!=b; bb = bbnext {
@@ -698,14 +723,17 @@ func (bc *BlockCache) NewBlock(blktype uint16, root bool, length uint16) *Block 
 	}
 
 	b.Data = b.raw[BTHeaderSize:]
-	b.coffset = bc.coffset
-	if bc.coffset==0 {
-		panic("bc.coffset == 0")
-	}
-
 	bc.Lock()
+	b.coffset = bc.coffset
 	b.Offset = bc.ucoffset
 	bc.ucoffset += 2
+	b.ucprev = nil
+	b.ucnext = bc.usfirst
+	if bc.usfirst != nil {
+		bc.usfirst.ucprev = b
+	}
+
+	bc.usfirst = b
 	bc.Unlock()
 
 	return b
