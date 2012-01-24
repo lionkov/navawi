@@ -153,12 +153,7 @@ func main() {
 	}
 
 	fmt.Printf("id %v read %v bytes: %v\n", id1, n, buf)
-	err = gostor.Sync(id1)
-	if err != nil {
-		goto error
-	}
-
-	id, err = gostor.Id(id1)
+	id, err = gostor.Sync(id1)
 	if err != nil {
 		goto error
 	}

@@ -9,8 +9,8 @@ import (
 	"math/rand"
 	"net/http"
 _	"net/http/pprof"
-	"runtime"
-	"time"
+_	"runtime"
+_	"time"
 )
 
 const (
@@ -287,17 +287,16 @@ func testloop() {
 		}
 	}
 
-	gostor.Sync(f.root)
 	if err==nil {
 		err = f.checkFile()
 	}
 
-	if err==nil {
-		err = f.checkSize()
+	id := f.root
+	if err == nil {
+		id, err = gostor.Sync(f.root)
 	}
 
 	if err==nil {
-		id, _ := gostor.Id(f.root)
 		fmt.Printf("Root %d\n", id)
 		fmt.Printf("Reads %d (%d bytes) Writes %d (%d bytes)\n", f.readnum, f.readlen, f.writenum, f.writelen)
 		testc <- nil
@@ -354,8 +353,8 @@ func main() {
 	fmt.Printf("Before Stats\n")
 	fmt.Printf("%s", gostor.Stats())
 */
-	for {
-		runtime.GC()
-		time.Sleep(10000000000)
-	}
+//	for {
+//		runtime.GC()
+//		time.Sleep(10000000000)
+//	}
 }

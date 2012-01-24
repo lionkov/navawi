@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"io"
+	"net/http"
 )
 
 const (
@@ -85,6 +87,11 @@ type BlockCache struct {
 	commitchan	chan chan bool
 
 	usfirst		*Block	// list of allocated, but not stored yet
+
+	// stats
+	nhits		uint64
+	nmisses		uint64
+	ndrops		uint64
 }
 
 type DataType interface {
@@ -114,6 +121,8 @@ func NewBlockCache(dc *DiskCache, disk *os.File, maxcount uint32) (*BlockCache, 
 	nblk.Data = make([]byte, 0)
 	bc.nullblk = nblk
 
+	http.Handle("/gostor/bcache", bc)
+
 	go bc.commitproc()
 	return bc, nil
 }
@@ -127,7 +136,7 @@ func (bc *BlockCache) commitproc() {
 		c = nil
 		select {
 		case _ = <- tick:
-			err = bc.commit(true)
+			err = bc.commit(false)
 
 		case c = <- bc.commitchan:
 			err = bc.commit(c!=nil)
@@ -296,6 +305,7 @@ func (bc *BlockCache) makeSpace() {
 
 		delete(bc.cache, db.Offset)
 		bc.lruremove(db)
+		bc.ndrops++
 	}
 }
 
@@ -336,6 +346,12 @@ again:
 
 	if b!=nil && (b.lru!=nil || bc.lru==b) {
 		bc.lruupdate(b)
+	}
+
+	if b==nil {
+		bc.nmisses++
+	} else {
+		bc.nhits++
 	}
 	bc.Unlock()
 
@@ -566,11 +582,18 @@ func (bc *BlockCache) removeUncommitted(c1 uint64) {
 	}
 }
 
+// if force is true, commit all blocks that are in the uncommitted list
 func (bc *BlockCache) commit(force bool) error {
-	var b *Block
+	var b, blast *Block
 
 	bc.Lock()
+again:
 	bc.gc()
+	blast = nil
+	if force {
+		blast = bc.uclast
+	}
+
 	if bc.ucsize==0 || (!force && bc.ucsize < bc.maxucsize) {
 		if bc.ocoffset < bc.coffset {
 			c1 := bc.coffset
@@ -704,6 +727,15 @@ func (bc *BlockCache) commit(force bool) error {
 		bb.ucprev = nil
 		bb.ucnext = nil
 	}
+
+	if force {
+		// make sure that we committed all blocks we promised to commit
+		for b := bc.ucfirst; b != nil; b = b.ucnext {
+			if b==blast {
+				goto again
+			}
+		}
+	}
 	bc.Unlock()
 
 	return nil
@@ -817,4 +849,17 @@ func (b *Block) Level() int {
 
 func (b *Block) IsCommitted() bool {
 	return b.Offset%2 == 0
+}
+
+func (bc *BlockCache) ServeHTTP(c http.ResponseWriter, r *http.Request) {
+	io.WriteString(c, fmt.Sprintf("<html><body><h1>Disk Cache</h1>"))
+	defer io.WriteString(c, "</body></html>")
+
+	bc.Lock()
+	io.WriteString(c, fmt.Sprintf("<p>Cache size: %d\n", len(bc.cache)))
+	io.WriteString(c, fmt.Sprintf("<p>Number of hits: %d\n", bc.nhits))
+	io.WriteString(c, fmt.Sprintf("<p>Number of misses: %d\n", bc.nmisses))
+	io.WriteString(c, fmt.Sprintf("<p>Number of drops: %d\n", bc.ndrops))
+	io.WriteString(c, fmt.Sprintf("<p>Number of drops: %d\n", dc.ndrops))
+	bc.Unlock()
 }

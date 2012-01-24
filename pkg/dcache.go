@@ -16,6 +16,12 @@ type DiskCache struct {
 	maxcount	uint32
 	cache		map[uint64] *entry
 	lru, mru	*entry
+
+	// stats
+	nreads		uint64		// number of reads from the disk
+	ndiscards	uint64		// number of discards
+	ndrops		uint64		// number of drops (discards + full cache)
+	nhits		uint64		// number of cache hits
 }
 
 type entry struct {
@@ -36,28 +42,16 @@ func NewDiskCache(d *os.File, blksz uint32, maxcount uint32) *DiskCache {
 }
 
 func (dc *DiskCache) ServeHTTP(c http.ResponseWriter, r *http.Request) {
-	io.WriteString(c, fmt.Sprintf("<html><body><h1>Data Cache</h1>"))
+	io.WriteString(c, fmt.Sprintf("<html><body><h1>Disk Cache</h1>"))
 	defer io.WriteString(c, "</body></html>")
 
 	dc.Lock()
-	// LRU list
-	nl := 0
-	for e := dc.lru; e != nil; e = e.mru {
-		nl++
-	}
-
-	// MRU list
-	nm := 0
-	for e := dc.mru; e != nil; e = e.lru {
-		nm++
-	}
-
-	nc := len(dc.cache)
+	io.WriteString(c, fmt.Sprintf("<p>Cache size: %d\n", len(dc.cache)))
+	io.WriteString(c, fmt.Sprintf("<p>Number of Hits: %d\n", dc.nhits))
+	io.WriteString(c, fmt.Sprintf("<p>Number of reads: %d\n", dc.nreads))
+	io.WriteString(c, fmt.Sprintf("<p>Number of discards: %d\n", dc.ndiscards))
+	io.WriteString(c, fmt.Sprintf("<p>Number of drops: %d\n", dc.ndrops))
 	dc.Unlock()
-
-	io.WriteString(c, fmt.Sprintf("<p>LRU count: %d\n", nl))
-	io.WriteString(c, fmt.Sprintf("<p>MRU count: %d\n", nm))
-	io.WriteString(c, fmt.Sprintf("<p>Cache count: %d\n", nc))
 }
 
 func (dc *DiskCache) newEntry(offset uint64) (*entry, error) {
@@ -107,6 +101,7 @@ func (dc *DiskCache) lruremove() {
 	delete(dc.cache, e.offset)
 	e.lru = nil
 	e.mru = nil
+	dc.ndrops++
 //	dc.lrucheck()
 }
 
@@ -160,12 +155,18 @@ func (dc *DiskCache) Read(offset uint64, count uint32) ([]byte, error) {
 	en[0], f0 = dc.cache[off]
 	if f0 {
 		dc.lruupdate(en[0])
+		dc.nhits++
+	} else {
+		dc.nreads++
 	}
 
 	if over {
 		en[1], f1 = dc.cache[off+uint64(dc.blksz)]
 		if f1 {
 			dc.lruupdate(en[1])
+			dc.nhits++
+		} else {
+			dc.nreads++
 		}
 	} else {
 		f1 = true
@@ -239,6 +240,7 @@ func (dc *DiskCache) Discard(start, end uint64) {
 		}
 
 		delete(dc.cache, soff)
+		dc.ndiscards++
 
 		// remove from the LRU list
 		if e.lru!=nil {

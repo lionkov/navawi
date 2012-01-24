@@ -67,25 +67,25 @@ func Id(root uint64) (uint64, error) {
 
 // Commit the specified root to disk. The file needs to be
 // still "live"
-func Sync(root uint64) error {
+func Sync(root uint64) (uint64, error) {
 //	debug("Sync %v\n", root)
 	if root%2==0 && root!=0 {
-		return nil
+		return root, nil
 	}
 
 	b, err := bc.Get(root)
 	if err!=nil {
-		return err
+		return root, err
 	}
 
 //	debug("blk %p type %x\n", b, b.blktype)
 	if !b.IsRoot() {
-		return errors.New("not root")
+		return root, errors.New("not root")
 	}
 
 	bc.Commit(b)
-//	debug("Sync old %v new %v\n", root, b.Offset)
-	return nil
+	debug("Sync old %v new %v\n", root, b.Offset)
+	return b.Offset, nil
 }
 
 // Forget the file with ID root. If the file is not referenced by other files
