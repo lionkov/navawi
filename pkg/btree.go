@@ -3,6 +3,7 @@ package gostor
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 )
 
 const (
@@ -601,12 +602,17 @@ func copyToBlocks(ds [][]byte, bs []*Block, datasz int, ctype uint16, maxblksz i
 		m := copy(blks[bi].Data[bpos:], ds[di][dpos:])
 		bpos += m
 
-		if b!=nil && b.coffset < blks[bi].coffset {
-			if b.coffset == 0 {
-				fmt.Printf("argh b.Offset %d\n", b.Offset)
-//				panic("argh ")
+		c := atomic.LoadUint64(&blks[bi].coffset)
+		if b!=nil && b.coffset!=0 {
+//			debug("block %d data from block %d c %d b.coffset %d\n", blks[bi].Offset, b.Offset, c, b.coffset)
+			for (c==0 || b.coffset<c) {
+//				debug("block %d replace %d with %d\n", blks[bi].Offset, c, b.coffset)
+				if !atomic.CompareAndSwapUint64(&blks[bi].coffset, c, b.coffset) {
+					break
+				}
+
+				c = atomic.LoadUint64(&blks[bi].coffset)
 			}
-			blks[bi].coffset = b.coffset
 		}
 
 		if len(blks[bi].Data) <= bpos {
