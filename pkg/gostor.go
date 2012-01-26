@@ -24,8 +24,8 @@ var Conf = conf {
 	Maxblocksz:	 8192,
 	Maxdatablocksz:	65536 - 8192,
 	Segmentsz:	16*1024*1024,
-	Dcacheblksz:	8192,
-	Dcachesz:	16*1024,
+	Dcacheblksz:	2*8192,
+	Dcachesz:	8*1024,
 	Bcachesz:	16*1024,
 }
 
@@ -84,7 +84,7 @@ func Sync(root uint64) (uint64, error) {
 	}
 
 	bc.Commit(b)
-	debug("Sync old %v new %v\n", root, b.Offset)
+//	debug("Sync old %v new %v\n", root, b.Offset)
 	return b.Offset, nil
 }
 

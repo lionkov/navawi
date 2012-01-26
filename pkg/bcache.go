@@ -216,7 +216,7 @@ func RegisterDataType(bt DataType) bool {
 func (bc *BlockCache) readBlock(offset uint64, b *Block) error {
 	debug("BlockCache.readBlock offset %d\n", offset)
 	b.Offset = offset
-	hdr, err := bc.dc.Read(offset, BTHeaderSize)
+	hdr, err := bc.dc.ReadAll(offset, BTHeaderSize)
 	if err!=nil {
 		return err
 	}
@@ -610,7 +610,7 @@ again:
 				}
 			}
 
-			debug("BlockCache.commit: remove ! blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
+//			debug("BlockCache.commit: remove ! blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
 			bc.removeUncommitted(c1)
 		}
 
@@ -638,7 +638,7 @@ again:
 			break
 		}
 
-		debug("BlockCache.commit %d (%d) --> %d (%d)\n", b.Offset, b.coffset, offset, b.Length)
+//		debug("BlockCache.commit %d (%d) --> %d (%d)\n", b.Offset, b.coffset, offset, b.Length)
 		bc.coffset = b.Offset
 		bc.ucache[b.Offset] = offset
 		if bc.liveblocks[b.Offset] {
@@ -714,7 +714,7 @@ again:
 			c1 = c
 		}
 	}
-	debug("BlockCache.commit: remove @ blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
+//	debug("BlockCache.commit: remove @ blocks from %d to %d len(cache) %d\n", bc.ocoffset, c1, len(bc.cache))
 	bc.removeUncommitted(c1)
 	bc.ocoffset = c1
 	for bb, bbnext :=sb, sb.ucnext; bb!=b; bb = bbnext {

@@ -62,7 +62,7 @@ func (f *File) Read(op *Op) error {
 	buf := make([]byte, op.count)
 	l := 0
 	for o, p := uint64(op.start), buf; len(p) > 0; {
-		count, err, _ := gostor.Read(f.root, o, p)
+		count, err, _ := gostor.Read(f.root, o, p, false)
 		if err!=nil {
 			return err
 		}
@@ -169,7 +169,7 @@ func (f *File) checkFile() error {
 	offset := uint64(0)
 	buf := make([]byte, 1024*1024)
 	for offset < f.datalen {
-		n, err, _ := gostor.Read(f.root, offset, buf)
+		n, err, _ := gostor.Read(f.root, offset, buf, false)
 		if err != nil {
 			return err
 		}

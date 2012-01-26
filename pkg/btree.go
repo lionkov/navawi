@@ -947,7 +947,7 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	return rootblk.Offset, err
 }
 
-func Read(root, offset uint64, data []byte) (int, error, uint16) {
+func Read(root, offset uint64, data []byte, any bool) (int, error, uint16) {
 //	debug("Read root %v offset %v count %v\n", root, offset, len(data))
 	bp, err := find(root, offset)
 	if err!=nil || bp.isEndOfFile(0) {
@@ -1009,7 +1009,7 @@ func Read(root, offset uint64, data []byte) (int, error, uint16) {
 			if ctype != BTHole {
 				break
 			}
-		} else if (e.Type() != ctype) {
+		} else if (!any && e.Type() != ctype) {
 			break
 		}
 	}

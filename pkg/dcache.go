@@ -7,6 +7,7 @@ _	"fmt"
 	"io"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 )
 
 type DiskCache struct {
@@ -22,6 +23,8 @@ type DiskCache struct {
 	ndiscards	uint64		// number of discards
 	ndrops		uint64		// number of drops (discards + full cache)
 	nhits		uint64		// number of cache hits
+	nshorts		uint64
+	njoins		uint64
 }
 
 type entry struct {
@@ -51,6 +54,8 @@ func (dc *DiskCache) ServeHTTP(c http.ResponseWriter, r *http.Request) {
 	io.WriteString(c, fmt.Sprintf("<p>Number of reads: %d\n", dc.nreads))
 	io.WriteString(c, fmt.Sprintf("<p>Number of discards: %d\n", dc.ndiscards))
 	io.WriteString(c, fmt.Sprintf("<p>Number of drops: %d\n", dc.ndrops))
+	io.WriteString(c, fmt.Sprintf("<p>Short reads: %d\n", atomic.LoadUint64(&dc.nshorts)))
+	io.WriteString(c, fmt.Sprintf("<p>Join reads: %d\n", atomic.LoadUint64(&dc.njoins)))
 	dc.Unlock()
 }
 
@@ -143,13 +148,16 @@ func (dc *DiskCache) lruupdate(e *entry) {
 }
 
 // count <= blksz
-func (dc *DiskCache) Read(offset uint64, count uint32) ([]byte, error) {
+func (dc *DiskCache) read(offset uint64, count uint32) ([]byte, error) {
 	var en[2] *entry
 	var f0, f1 bool
 	var data []byte
 
 	off := offset - offset%uint64(dc.blksz)
 	over := (off+uint64(dc.blksz)) < (offset + uint64(count))
+	if over {
+		atomic.AddUint64(&dc.njoins, 1)
+	}
 
 	dc.Lock()
 	en[0], f0 = dc.cache[off]
@@ -261,16 +269,17 @@ func (dc *DiskCache) Discard(start, end uint64) {
 
 func (dc *DiskCache) ReadAll(offset uint64, count uint32) (ret []byte, err error) {
 	off := offset - offset%uint64(dc.blksz)
-	over := (off+uint64(dc.blksz)) < (offset + uint64(count))
+	over := (off+uint64(2*dc.blksz)) < (offset + uint64(count))
 
 	if !over {
-		return dc.Read(offset, count)
+		atomic.AddUint64(&dc.nshorts, 1)
+		return dc.read(offset, count)
 	}
 
 	ret = make([]byte, count)
-	n := dc.blksz - uint32(offset + off)
+	n := dc.blksz - uint32(offset - off)
 	for b:=ret; len(b) > 0; {
-		d, err := dc.Read(offset, n)
+		d, err := dc.read(offset, n)
 		if err!=nil {
 			return nil, err
 		}

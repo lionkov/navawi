@@ -87,7 +87,7 @@ func FindActiveSegment(dc *DiskCache) (offset uint64, err error) {
 
 		// header
 //		debug("FindActiveSegment offset %v\n", offset)
-		hdr, err = dc.Read(offset, SGHeaderSize)
+		hdr, err = dc.ReadAll(offset, SGHeaderSize)
 		if err != nil {
 			return 0, err
 		}
@@ -103,7 +103,7 @@ func FindActiveSegment(dc *DiskCache) (offset uint64, err error) {
 
 //		debug("FindActiveSegment offset %v size %v next %v ^0 %v\n", offset, size, next, ^uint64(0))
 		// trailer
-		tr, err = dc.Read(offset+uint64(size) - SGTrailerSize, SGTrailerSize)
+		tr, err = dc.ReadAll(offset+uint64(size) - SGTrailerSize, SGTrailerSize)
 		if err != nil {
 			return 0, err
 		}
@@ -174,7 +174,7 @@ func FormatDisk(disk *os.File, disksz uint64, segsz uint32) error {
 
 func ReadSegment(dc *DiskCache, offset uint64) (*Segment, error) {
 //	debug("ReadSegment offset %v\n", offset)
-	b, err := dc.Read(offset, SGHeaderSize + FGHeaderSize)
+	b, err := dc.ReadAll(offset, SGHeaderSize + FGHeaderSize)
 	if err!=nil {
 		return nil, err
 	}
@@ -205,7 +205,7 @@ L:
 
 		sz, _ := gint32(p)
 		s.nextfrag += uint64(sz)
-		p, err = dc.Read(s.nextfrag, FGHeaderSize)
+		p, err = dc.ReadAll(s.nextfrag, FGHeaderSize)
 	}
 
 	return s, nil
@@ -398,7 +398,7 @@ func (s *Segment) findBlock(btype uint16) (root uint64, err error) {
 
 	debug("Segment.findBlock: segment size %d\n", s.size)
 	for offset:=uint64(SGHeaderSize); offset<uint64(s.size); {
-		buf, err = sm.dc.Read(offset, FGHeaderSize)
+		buf, err = sm.dc.ReadAll(offset, FGHeaderSize)
 		if err!=nil {
 			return
 		}
@@ -418,7 +418,7 @@ func (s *Segment) findBlock(btype uint16) (root uint64, err error) {
 		}
 
 		debug("Segment.findBlock: fragment size %d header %v\n", sz, buf)
-		buf, err = sm.dc.Read(offset+FGHeaderSize, sz-FGHeaderSize)
+		buf, err = sm.dc.ReadAll(offset+FGHeaderSize, sz-FGHeaderSize)
 		if err!=nil {
 			return
 		}
