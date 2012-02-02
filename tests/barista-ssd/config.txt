@@ -1,0 +1,5 @@
+Configuration:
+
+16 (4x4) Opteron 8354
+32GB RAM
+Disk: INTEL SSDSA2M160

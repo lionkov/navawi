@@ -1,0 +1,12 @@
+set term post eps enhan color
+set out "bandwidth-thread.eps"
+set ylabel "Bandwidth bytes/s"
+set xlabel "Threads"
+unset title
+set key top left
+plot \
+	"< grep ^1048576 results" using 2:9 with linespoints title "1 MB File", \
+	"< grep ^16777216 results" using 2:9 with linespoints title "16 MB File", \
+	"< grep ^268435456 results" using 2:9 with linespoints title "256 MB File", \
+	"< grep ^1073741824 results" using 2:9 with linespoints title "1 GB File", \
+	"< grep ^2147483648 results" using 2:9 with linespoints title "2 GB File"
