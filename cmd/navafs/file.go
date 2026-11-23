@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-        "code.google.com/p/go9p/p"
-	"gostor"
-	"os"
+        "github.com/lionkov/go9p/p"
+	"github.com/lionkov/navawi"
+	"syscall"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -64,7 +64,7 @@ func (f *File) Remove() error {
 		dir.wlock.Unlock()
 		return err
 	}
-	gostor.Forget(dir.Root)
+	navawi.Forget(dir.Root)
 	dir.Root = newroot
 
 	// remove the file from the children map
@@ -88,11 +88,11 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 	dir.wlock.Lock()
 	f := dir.children[name]
 	if f != nil {
-		if f.err == nil || f.err != os.ENOENT {
+		if f.err == nil || f.err != syscall.ENOENT {
 			err := f.err
 			dir.wlock.Unlock()
 			if err == nil {
-				err = os.EEXIST
+				err = syscall.EEXIST
 			}
 
 			return nil, err
@@ -132,7 +132,7 @@ func (dir *File) Create(name string, mode uint32, uid p.User, gid p.Group, ext s
 	}
 
 	// create succeeded, update the offsets
-	gostor.Forget(dir.Root)
+	navawi.Forget(dir.Root)
 	dir.Root = newroot
 	for _, c := range dir.children {
 		if c != f && c.entryOffset >= f.entryOffset {
@@ -163,7 +163,7 @@ func (f *File) Unref() {
 	}
 
 	fmt.Printf("File.Unref %p destroyed\n", f)
-	gostor.Forget(f.Root)
+	navawi.Forget(f.Root)
 }
 
 func (f *File) Read(offset uint64, buf []byte) (int, error) {
@@ -171,21 +171,21 @@ func (f *File) Read(offset uint64, buf []byte) (int, error) {
 	root := f.Root
 	f.Unlock()
 
-	count, err, _ := gostor.Read(root, offset, buf)
+	count, err, _ := navawi.Read(root, offset, buf, false)
 	fmt.Printf("File.Read count %d error %v\n", count, err)
 	return count, err
 }
 
 func (f *File) Write(offset uint64, buf []byte) (int, error) {
 	f.wlock.Lock()
-	newroot, err := gostor.Write(f.Root, offset, offset+uint64(len(buf)), len(buf), buf, gostor.BTData)
+	newroot, err := navawi.Write(f.Root, offset, offset+uint64(len(buf)), len(buf), buf, navawi.BTData)
 	if err != nil {
 		f.wlock.Unlock()
 		return 0, err
 	}
-	gostor.Forget(f.Root)
+	navawi.Forget(f.Root)
 	f.Root = newroot
-	f.Length, err = gostor.Size(f.Root)
+	f.Length, err = navawi.Size(f.Root)
 	fmt.Printf("File.Write new size %d\n", f.Length)
 	f.wlock.Unlock()
 	if err!=nil {
@@ -203,18 +203,18 @@ func (f *File) Wstat(fi *FileInfo) error {
 
 	if fi.Length != f.Length {
 		if fi.Length > f.Length {
-			newroot, err := gostor.Write(f.Root, f.Length, f.Length, int(fi.Length-f.Length), nil, gostor.BTData)
+			newroot, err := navawi.Write(f.Root, f.Length, f.Length, int(fi.Length-f.Length), nil, navawi.BTData)
 			if err != nil {
 				return err
 			}
 			fi.Root = newroot
 		} else {
-			newroot, err := gostor.Write(f.Root, fi.Length, f.Length, 0, nil, gostor.BTData)
+			newroot, err := navawi.Write(f.Root, fi.Length, f.Length, 0, nil, navawi.BTData)
 			if err != nil {
 				return err
 			}
 
-			gostor.Forget(fi.Root)
+			navawi.Forget(fi.Root)
 			fi.Root = newroot
 		}
 
@@ -233,7 +233,7 @@ func (f *File) Wstat(fi *FileInfo) error {
 	}
 
 	if err == nil {
-		gostor.Forget(f.dir.Root)
+		navawi.Forget(f.dir.Root)
 		f.dir.Root = newdir
 	}
 	f.dir.wlock.Unlock()
@@ -264,7 +264,7 @@ func (f *File) update() error {
 			return err
 		}
 
-		gostor.Forget(d.Root)
+		navawi.Forget(d.Root)
 		d.Root = newroot
 		d.wlock.Unlock()
 	}

@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-        "code.google.com/p/go9p/p"
-	"gostor"
+        "github.com/lionkov/go9p/p"
+	"github.com/lionkov/navawi"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,18 +30,18 @@ func NextPath() uint64 {
 func ReadSuper() error {
 	var err error
 
-	super.id, err = gostor.Find(BTSuper | gostor.BTRoot)
+	super.id, err = navawi.Find(BTSuper | navawi.BTRoot)
 	if err != nil {
 		return err
 	}
 
-	super.blocksz, err = gostor.Size(super.id)
+	super.blocksz, err = navawi.Size(super.id)
 	if err != nil {
 		return err
 	}
 
 	buf := make([]byte, super.blocksz)
-	_, err, _ = gostor.Read(super.id, 0, buf)
+	_, err, _ = navawi.Read(super.id, 0, buf, false)
 	if err != nil {
 		return err
 	}
@@ -65,14 +65,14 @@ func UpdateSuper() error {
 	encodeFileInfo(&super.root.FileInfo, data)
 	pint64(super.nextpath, data[sz:])
 	//	fmt.Printf("UpdateSuper: root %d %v\n", super.root.Root, data)
-	id, err := gostor.Write(super.id, 0, super.blocksz, len(data), data, BTSuper)
+	id, err := navawi.Write(super.id, 0, super.blocksz, len(data), data, BTSuper)
 	if err != nil {
 		super.Unlock()
 		return nil
 	}
 
 	fmt.Printf("UpdateSuper: new super %d root %d\n", id, super.root.Root)
-	gostor.Forget(super.id)
+	navawi.Forget(super.id)
 	super.id = id
 	super.blocksz = uint64(len(data))
 	super.Unlock()
@@ -120,7 +120,7 @@ func (btSuper) Files(data []byte) []uint64 {
 func (btSuper) Commit(data []byte) bool {
 	id, _ := gint64(data[len(data)-16:])
 	fmt.Printf("btSuper.Commit id %d\n", id)
-	newid, err := gostor.Id(id)
+	newid, err := navawi.Id(id)
 	if err != nil {
 		fmt.Printf("btSuper.Commit: id %d root %d Error %v\n", id, super.root.Root, err)
 		return false

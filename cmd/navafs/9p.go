@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-        "code.google.com/p/go9p/p"
-        "code.google.com/p/go9p/p/srv"
+        "github.com/lionkov/go9p/p"
+        "github.com/lionkov/go9p/p/srv"
 	"log"
 	"syscall"
 )
@@ -29,7 +29,7 @@ func toError(err error) *p.Error {
 		ecode = syscall.EIO
 	}
 
-	return &p.Error{ename, ecode}
+	return &p.Error{Err: ename, Errornum: uint32(ecode)}
 }
 
 func (*Fs) ConnOpened(conn *srv.Conn) {
@@ -160,13 +160,14 @@ func (*Fs) Read(req *srv.Req) {
 			decodeEntry(f)
 			f = decodeFileInfo(f, &fi)
 			fmt.Printf("9P Read: name %s entrySize %d\n", fi.Name, fi.entrySize)
-			n := p.PackDir(&fi.Dir, t, req.Conn.Dotu)
-			if n == 0 {
+			b := p.PackDir(&fi.Dir, req.Conn.Dotu)
+			if len(b) > len(t) {
 				break
 			}
 
-			t = t[n:]
-			count += n
+			copy(t, b)
+			t = t[len(b):]
+			count += len(b)
 			elen += int(sizeFileInfo(&fi))
 		}
 		fid.diroffset = offset + uint64(elen)

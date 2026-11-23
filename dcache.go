@@ -1,4 +1,4 @@
-package gostor
+package navawi
 
 import (
 _	"fmt"
@@ -8,6 +8,7 @@ _	"fmt"
 	"fmt"
 	"net/http"
 	"sync/atomic"
+	"syscall"
 )
 
 type DiskCache struct {
@@ -40,7 +41,7 @@ func NewDiskCache(d *os.File, blksz uint32, maxcount uint32) *DiskCache {
 	dc.maxcount = maxcount
 	dc.cache = make(map[uint64] *entry)
 
-	http.Handle("/gostor/dcache", dc)
+	http.Handle("/navawi/dcache", dc)
 	return dc
 }
 
@@ -66,7 +67,7 @@ func (dc *DiskCache) newEntry(offset uint64) (*entry, error) {
 	n, err := dc.disk.ReadAt(e.data, int64(offset))
 	if err!=nil || uint32(n)!=dc.blksz {
 		if uint32(n)!=dc.blksz {
-			err = os.ERANGE
+			err = syscall.ERANGE
 		}
 
 		return nil, err

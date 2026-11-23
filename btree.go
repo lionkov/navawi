@@ -1,4 +1,4 @@
-package gostor
+package navawi
 
 import (
 	"errors"

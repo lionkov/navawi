@@ -1,4 +1,4 @@
-package gostor
+package navawi
 
 func gint8(buf []byte) (uint8, []byte) { return buf[0], buf[1:len(buf)] }
 

@@ -1,4 +1,4 @@
-package gostor
+package navawi
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 	"os"
 	"hash/crc32"
 	"sync"
+	"syscall"
 )
 
 const (
@@ -436,7 +437,7 @@ func (s *Segment) findBlock(btype uint16) (root uint64, err error) {
 	}
 
 	if root==0 {
-		err = os.ENOENT
+		err = syscall.ENOENT
 	}
 
 	return

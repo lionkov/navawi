@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"gostor"
+	"github.com/lionkov/navawi"
 )
 
 var root = flag.Int64("r", 0, "file id")
@@ -17,12 +17,12 @@ func main() {
 		return
 	}
 
-	err = gostor.Init(flag.Arg(0))
+	err = navawi.Init(flag.Arg(0))
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 		return
 	}
 
-	s, err := gostor.Dump(uint64(*root), true)
+	s, err := navawi.Dump(uint64(*root), true)
 	fmt.Printf("%s", s)
 }

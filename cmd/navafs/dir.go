@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-        "code.google.com/p/go9p/p"
-	"gostor"
+        "github.com/lionkov/go9p/p"
+	"github.com/lionkov/navawi"
 	"io"
-	"os"
+	"syscall"
 )
 
 const (
@@ -58,7 +58,7 @@ func readUntilStart(dir, offset uint64, buf []byte) ([]byte, error) {
 			buf = tbuf
 		}
 
-		n, err, _ := gostor.Read(dir, offset+uint64(pos), buf[pos:])
+		n, err, _ := navawi.Read(dir, offset+uint64(pos), buf[pos:], false)
 		if err != nil {
 			return nil, err
 		}
@@ -72,9 +72,6 @@ func readUntilStart(dir, offset uint64, buf []byte) ([]byte, error) {
 			return buf[0 : m+4], nil
 		}
 	}
-
-	// can't happen
-	return nil, nil
 }
 
 func readBackUntilStart(dir, offset uint64, buf []byte) (uint64, []byte, error) {
@@ -91,7 +88,7 @@ func readBackUntilStart(dir, offset uint64, buf []byte) (uint64, []byte, error) 
 			copy(tbuf[size:], buf)
 		}
 
-		n, err, _ := gostor.Read(dir, offset-uint64(size), buf[0:size])
+		n, err, _ := navawi.Read(dir, offset-uint64(size), buf[0:size], false)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -106,9 +103,6 @@ func readBackUntilStart(dir, offset uint64, buf []byte) (uint64, []byte, error) 
 			return offset + uint64(m), buf[m:], nil
 		}
 	}
-
-	// can't happen
-	return 0, nil, nil
 }
 
 // Find DirEntry at the specified offset. The offset doesn't need to point to
@@ -130,7 +124,7 @@ func findEntry(dir, offset uint64) (uint64, []byte, error) {
 			buf = tbuf
 		}
 
-		n, err, _ := gostor.Read(dir, offset+uint64(pos), buf[pos:])
+		n, err, _ := navawi.Read(dir, offset+uint64(pos), buf[pos:], false)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -159,7 +153,7 @@ L:
 		tbuf := make([]byte, len(buf)+size)
 		copy(tbuf[size:], buf)
 		buf = tbuf
-		n, err, _ := gostor.Read(dir, offset-uint64(size), buf[0:size])
+		n, err, _ := navawi.Read(dir, offset-uint64(size), buf[0:size], false)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -244,7 +238,7 @@ func bsearchEntry(dir uint64, name string) (uint64, []byte, error) {
 
 	n = 0
 	b = 0
-	t, err := gostor.Size(dir)
+	t, err := navawi.Size(dir)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -371,25 +365,25 @@ func CreateEntry(dir uint64, fi *FileInfo) (newdir uint64, err error) {
 	}
 
 	if data != nil {
-		return 0, os.EEXIST
+		return 0, syscall.EEXIST
 	}
 
 	entry, _ := encodeFileInfo(fi, nil)
-	dir, err = gostor.Write(dir, offset, offset, len(entry), entry, BTDirEntry)
+	dir, err = navawi.Write(dir, offset, offset, len(entry), entry, BTDirEntry)
 	fi.entryOffset = offset
 	fi.entrySize = uint64(len(entry))
 	return dir, err
 }
 
 func RemoveEntry(dir uint64, fi *FileInfo) (newdir uint64, err error) {
-	return gostor.Write(dir, fi.entryOffset, fi.entryOffset+fi.entrySize, 0, nil, 0)
+	return navawi.Write(dir, fi.entryOffset, fi.entryOffset+fi.entrySize, 0, nil, 0)
 }
 
 // uses fi.entryOffset and fi.entrySize to decide which entry to modify
 // returns the new size in fi.entrySize
 func ModifyEntry(dir uint64, fi *FileInfo) (newdir uint64, err error) {
 	newentry, _ := encodeFileInfo(fi, nil)
-	dir, err = gostor.Write(dir, fi.entryOffset, fi.entryOffset+fi.entrySize, len(newentry), newentry, BTDirEntry)
+	dir, err = navawi.Write(dir, fi.entryOffset, fi.entryOffset+fi.entrySize, len(newentry), newentry, BTDirEntry)
 	fi.entrySize = uint64(len(newentry))
 	return dir, err
 }
@@ -401,18 +395,18 @@ func RenameEntry(dir uint64, fi *FileInfo) (newdir uint64, err error) {
 	}
 
 	if entry != nil {
-		return 0, os.EEXIST
+		return 0, syscall.EEXIST
 	}
 
 	// remove the entry from the old offset
-	newdir, err = gostor.Write(dir, fi.entryOffset, fi.entryOffset+fi.entrySize, 0, nil, 0)
+	newdir, err = navawi.Write(dir, fi.entryOffset, fi.entryOffset+fi.entrySize, 0, nil, 0)
 	if err != nil {
 		return 0, err
 	}
 
 	// insert it at the new offset
 	newentry, _ := encodeFileInfo(fi, nil)
-	newdir, err = gostor.Write(newdir, offset, offset, len(newentry), newentry, BTDirEntry)
+	newdir, err = navawi.Write(newdir, offset, offset, len(newentry), newentry, BTDirEntry)
 	return newdir, err
 }
 
@@ -423,7 +417,7 @@ func FindEntry(dir uint64, name string) (fi *FileInfo, err error) {
 	}
 
 	if entry == nil {
-		return nil, os.ENOENT
+		return nil, syscall.ENOENT
 	}
 
 	fi = new(FileInfo)
@@ -491,7 +485,7 @@ func (btDirEntry) Commit(data []byte) bool {
 		entry := data[0:n]
 		decodeEntry(entry)
 		id, _ := gint64(entry[len(entry)-8:])
-		newid, err := gostor.Id(id)
+		newid, err := navawi.Id(id)
 		if err != nil {
 			fmt.Printf("btDirEntry.Commit: Error %v\n", err)
 			return false

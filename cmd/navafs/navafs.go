@@ -7,30 +7,30 @@ import (
 	"log"
 	"os"
 	"syscall"
-	"gostor"
-        "code.google.com/p/go9p/p"
+	"github.com/lionkov/navawi"
+        "github.com/lionkov/go9p/p"
 )
 
 var addr = flag.String("addr", ":5640", "network address")
 var debug = flag.Int("d", 0, "print debug messages")
-var disk *string = flag.String("disk", "godisk", "gostor disk")
-var Enoent = &p.Error{"file not found", syscall.ENOENT}
+var disk *string = flag.String("disk", "godisk", "navawi disk")
+var Enoent = &p.Error{Err: "file not found", Errornum: uint32(syscall.ENOENT)}
 var fs *Fs
 
 func main() {
 	flag.Parse()
 
-	if err := gostor.Init(*disk); err != nil {
+	if err := navawi.Init(*disk); err != nil {
 		log.Println(err)
 		return
 	}
 
-	if ok:=gostor.RegisterDataType(btsuper); !ok {
+	if ok:=navawi.RegisterDataType(btsuper); !ok {
 		log.Println("can't register super type")
 		return
 	}
 
-	if ok:=gostor.RegisterDataType(btdirentry); !ok {
+	if ok:=navawi.RegisterDataType(btdirentry); !ok {
 		log.Println("can't register directory entry type")
 		return
 	}

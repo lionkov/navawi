@@ -1,4 +1,4 @@
-package gostor
+package navawi
 
 import (
 	"errors"
@@ -121,7 +121,7 @@ func NewBlockCache(dc *DiskCache, disk *os.File, maxcount uint32) (*BlockCache, 
 	nblk.Data = make([]byte, 0)
 	bc.nullblk = nblk
 
-	http.Handle("/gostor/bcache", bc)
+	http.Handle("/navawi/bcache", bc)
 
 	go bc.commitproc()
 	return bc, nil
@@ -852,7 +852,7 @@ func (b *Block) IsCommitted() bool {
 }
 
 func (bc *BlockCache) ServeHTTP(c http.ResponseWriter, r *http.Request) {
-	io.WriteString(c, fmt.Sprintf("<html><body><h1>Disk Cache</h1>"))
+	io.WriteString(c, fmt.Sprintf("<html><body><h1>Block Cache</h1>"))
 	defer io.WriteString(c, "</body></html>")
 
 	bc.Lock()

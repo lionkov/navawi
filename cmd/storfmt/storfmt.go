@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"gostor"
+	"github.com/lionkov/navawi"
 )
 
-var disk *string = flag.String("disk", "gostor", "gostor disk")
+var disk *string = flag.String("disk", "navawi", "navawi disk")
 var size = flag.Uint64("size", 0, "disk size")
 
 func main() {
@@ -33,7 +33,7 @@ func main() {
 		sz = uint64(fi.Size())
 	}
 
-	err = gostor.FormatDisk(d, sz, gostor.Conf.Segmentsz)
+	err = navawi.FormatDisk(d, sz, navawi.Conf.Segmentsz)
 	if err!=nil {
 		goto error
 	}

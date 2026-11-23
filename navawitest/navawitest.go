@@ -1,4 +1,4 @@
-package gostortest
+package navawitest
 
 import (
 	"errors"

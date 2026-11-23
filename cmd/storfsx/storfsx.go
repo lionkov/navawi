@@ -4,7 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"gostor"
+	"github.com/lionkov/navawi"
 	"math"
 	"math/rand"
 	"net/http"
@@ -37,18 +37,19 @@ type File struct {
 	writenum	int		// number of write operations
 	readlen		uint64		// number of bytes read
 	writelen	uint64		// number of bytes written
+	rnd		*rand.Rand	// per-thread source: a *rand.Rand is not safe for concurrent use
 }
 
 var debug = flag.Bool("d", false, "debug output for all operations")
 var flen = flag.Int64("l", 262144, "upper bound on file size")
 var oplen = flag.Int("o", 65536, "upper bound on operation size")
 var numop = flag.Int("N", math.MaxInt32, "total number of operations")
-var seed = flag.Int64("S", 1, "seed for random number generator")
+var seed = flag.Int64("S", 1, "seed for random number generator (thread i uses seed+i)")
 var checkAll = flag.Uint("c", math.MaxUint32, "check the content of the whole file after every write past the specified operation number")
 var checkSize = flag.Uint("s", math.MaxUint32, "check the file size after each write operation past the specified operation number")
 var threadnum = flag.Int("t", 1, "number of op threads")
-var dbgFrom = flag.Int("df", -1, "turn on Gostor debugging at the specified operation number")
-var dbgTo = flag.Int("dt", -1, "turn off Gostor debugging at the specified operation number")
+var dbgFrom = flag.Int("df", -1, "turn on navawi debugging at the specified operation number")
+var dbgTo = flag.Int("dt", -1, "turn off navawi debugging at the specified operation number")
 var dump = flag.Uint("dump", math.MaxUint32, "attach dump to each write operation past the specified operation number")
 var check = flag.Bool("C", true, "keep copy of the content of the file in memory for correctness checks")
 
@@ -62,7 +63,7 @@ func (f *File) Read(op *Op) error {
 	buf := make([]byte, op.count)
 	l := 0
 	for o, p := uint64(op.start), buf; len(p) > 0; {
-		count, err, _ := gostor.Read(f.root, o, p, false)
+		count, err, _ := navawi.Read(f.root, o, p, false)
 		if err!=nil {
 			return err
 		}
@@ -127,10 +128,10 @@ func (f *File) Write(op *Op) error {
 
 	buf := make([]byte, op.len)
 	for i:=int32(0); i < op.len; i++ {
-		buf[i] = byte(rand.Intn(256))
+		buf[i] = byte(f.rnd.Intn(256))
 	}
 
-	newroot, err := gostor.Write(f.root, uint64(op.start), uint64(op.end), int(op.count), buf, gostor.BTData)
+	newroot, err := navawi.Write(f.root, uint64(op.start), uint64(op.end), int(op.count), buf, navawi.BTData)
 	if err!=nil {
 		return err
 	}
@@ -156,7 +157,7 @@ func (f *File) Write(op *Op) error {
 		f.datalen = uint64(filesz)
 	}
 
-	gostor.Forget(f.root)
+	navawi.Forget(f.root)
 	f.root = newroot
 	return err
 }
@@ -169,7 +170,7 @@ func (f *File) checkFile() error {
 	offset := uint64(0)
 	buf := make([]byte, 1024*1024)
 	for offset < f.datalen {
-		n, err, _ := gostor.Read(f.root, offset, buf, false)
+		n, err, _ := navawi.Read(f.root, offset, buf, false)
 		if err != nil {
 			return err
 		}
@@ -192,11 +193,11 @@ func (f *File) checkFile() error {
 
 func (f *File) test(id uint) (err error) {
 	op := new(Op)
-	op.op = rand.Intn(Oplast)
-	op.start = rand.Int63n(*flen + int64(*oplen) * 2)
-	op.end = op.start + rand.Int63n(int64(*oplen))
-	op.count = rand.Int31n(int32(*oplen))
-	op.len = rand.Int31n(int32(*oplen))
+	op.op = f.rnd.Intn(Oplast)
+	op.start = f.rnd.Int63n(*flen + int64(*oplen) * 2)
+	op.end = op.start + f.rnd.Int63n(int64(*oplen))
+	op.count = f.rnd.Int31n(int32(*oplen))
+	op.len = f.rnd.Int31n(int32(*oplen))
 
 	if *check {
 		f.ops = append(f.ops, op)
@@ -204,29 +205,29 @@ func (f *File) test(id uint) (err error) {
 
 	switch op.op {
 	case Opread:
-		op.start = rand.Int63n(*flen + int64(*oplen) * 2)
-		op.len = rand.Int31n(int32(*oplen))
+		op.start = f.rnd.Int63n(*flen + int64(*oplen) * 2)
+		op.len = f.rnd.Int31n(int32(*oplen))
 		err = f.Read(op)
 
 	case Opwrite:
-		op.start = rand.Int63n(*flen)
-		op.end = op.start + rand.Int63n(int64(*oplen))
-		op.count = rand.Int31n(int32(*oplen))
-		op.len = rand.Int31n(int32(*oplen))
+		op.start = f.rnd.Int63n(*flen)
+		op.end = op.start + f.rnd.Int63n(int64(*oplen))
+		op.count = f.rnd.Int31n(int32(*oplen))
+		op.len = f.rnd.Int31n(int32(*oplen))
 		if op.len > op.count {
 			op.len = op.count
 		}
 		err = f.Write(op)
 		if err == nil {
 			if *dump <= id {
-				op.dump, err = gostor.Dump(f.root, true)
+				op.dump, err = navawi.Dump(f.root, true)
 			}
 
 			if err==nil && *checkAll <= id {
-//				gostor.Sync(f.root)
+//				navawi.Sync(f.root)
 				err = f.checkFile()
 //				if err!=nil {
-//					s, _ := gostor.Dump(f.root)
+//					s, _ := navawi.Dump(f.root)
 //					fmt.Printf("## %s\n", s)
 //				}
 			}
@@ -245,7 +246,7 @@ func (f *File) checkSize() error {
 		return nil
 	}
 
-	sz, err := gostor.Size(f.root)
+	sz, err := navawi.Size(f.root)
 	if err!=nil {
 		return err
 	}
@@ -257,17 +258,18 @@ func (f *File) checkSize() error {
 	return nil
 }
 
-func testloop() {
+func testloop(thread int) {
 	var err error
 
 	f := new(File)
+	f.rnd = rand.New(rand.NewSource(*seed + int64(thread)))
 	if *check {
 		f.data = make([]byte, *flen)
 	}
 
 	for i := 0; i < *numop; i++ {
 		if i==*dbgFrom {
-			gostor.SetDebug(true)
+			navawi.SetDebug(true)
 		}
 
 		err = f.test(uint(i))
@@ -276,10 +278,10 @@ func testloop() {
 		}
 		
 		if i==*dbgTo {
-			gostor.SetDebug(false)
+			navawi.SetDebug(false)
 		}
 
-		if rand.Intn(32) == 0 {
+		if f.rnd.Intn(32) == 0 {
 			err = f.checkSize()
 			if err!=nil {
 				break
@@ -293,7 +295,7 @@ func testloop() {
 
 	id := f.root
 	if err == nil {
-		id, err = gostor.Sync(f.root)
+		id, err = navawi.Sync(f.root)
 	}
 
 	if err==nil {
@@ -330,7 +332,7 @@ func main() {
 		return
 	}
 
-	err = gostor.Init(flag.Arg(0))
+	err = navawi.Init(flag.Arg(0))
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 		return
@@ -339,7 +341,7 @@ func main() {
 	go http.ListenAndServe(":6060", nil)
 	testc = make(chan error)
 	for i:=0; i < *threadnum; i++ {
-		go testloop()
+		go testloop(i)
 	}
 
 	for i:=0; i < *threadnum; i++ {
@@ -351,7 +353,7 @@ func main() {
 	fmt.Printf("Before GC\n")
 	runtime.GC()
 	fmt.Printf("Before Stats\n")
-	fmt.Printf("%s", gostor.Stats())
+	fmt.Printf("%s", navawi.Stats())
 */
 //	for {
 //		runtime.GC()
