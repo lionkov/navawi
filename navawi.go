@@ -90,6 +90,10 @@ func Sync(root uint64) (uint64, error) {
 
 // Forget the file with ID root. If the file is not referenced by other files
 // it will be garbage collected (eventually)
+//
+// A root written by Write stays live, and its ID resolvable, until Forget
+// is called with the ID that Write returned, even after the root is
+// committed.
 func Forget(root uint64) error {
 //	debug("Forget %d\n", root)
 	b, err := bc.Get(root)
@@ -101,7 +105,7 @@ func Forget(root uint64) error {
 		return errors.New("not root")
 	}
 
-	bc.RemoveLiveBlock(b.Offset)
+	bc.RemoveLiveBlock(root)
 	return nil
 }
 

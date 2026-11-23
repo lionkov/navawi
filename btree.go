@@ -943,8 +943,11 @@ func Write(root, start, end uint64, count int, data []byte, ctype uint16) (uint6
 	rootblk.SetRoot(true)
 	newblocks = append(newblocks, rootblk)
 //	debug("Store root block %v %p %v\n", rootblk.Offset, rootblk.Data, rootblk.Data)
+	// Read the ID before StoreBlocks makes the block visible to the commit
+	// goroutine, which may renumber it. StoreBlocks marks this ID live.
+	id := rootblk.Offset
 	err = bc.StoreBlocks(newblocks)
-	return rootblk.Offset, err
+	return id, err
 }
 
 func Read(root, offset uint64, data []byte, any bool) (int, error, uint16) {

@@ -640,12 +640,10 @@ again:
 
 //		debug("BlockCache.commit %d (%d) --> %d (%d)\n", b.Offset, b.coffset, offset, b.Length)
 		bc.coffset = b.Offset
+		// A live mark stays on the uncommitted ID: that is the ID the
+		// caller holds, and the mark keeps removeUncommitted from dropping
+		// the ucache entry that resolves it.
 		bc.ucache[b.Offset] = offset
-		if bc.liveblocks[b.Offset] {
-			delete(bc.liveblocks, b.Offset)
-			bc.liveblocks[offset] = true
-		}
-
 		delete(bc.cache, b.Offset)
 		b.Offset = offset
 		bc.cache[b.Offset] = b
@@ -781,8 +779,9 @@ func (bc *BlockCache) AddLiveBlock(offset uint64) {
 func (bc *BlockCache) RemoveLiveBlock(offset uint64) {
 //	debug("Remove live block %p id %d ucid %d\n", b, b.Offset, b.ucid)
 	bc.Lock()
+	// Leave the ucache entry: uncommitted blocks may still refer to the
+	// ID, and removeUncommitted drops it once none can.
 	delete(bc.liveblocks, offset)
-	delete(bc.ucache, offset)
 	bc.Unlock()
 }
 
